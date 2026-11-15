@@ -6,8 +6,8 @@ use agent_desktop_core::{AdapterError, DeliverySemantics, NotificationInfo};
 /// A listing failure ends the loop. After a dispatch it is recorded as a
 /// failure beside the dismissals already made, so the caller still merges a
 /// true disposition. An entry already gone counts as dismissed without a
-/// send, so a listing failure after only such entries stays `not_delivered`;
-/// with nothing dismissed at all it is the command's error.
+/// send, so a listing failure before any send is the command's error: nothing
+/// this command did is lost with it.
 #[cfg(target_os = "macos")]
 pub(super) fn dismiss_captured(
     entries: &[super::list::NotificationEntry],
@@ -26,11 +26,8 @@ pub(super) fn dismiss_captured(
                     || failures
                         .iter()
                         .any(|failure| failure.disposition != DeliverySemantics::not_delivered());
-                if !sent && dismissed.is_empty() {
-                    return Err(error);
-                }
                 if !sent {
-                    error.disposition = DeliverySemantics::not_delivered();
+                    return Err(error);
                 }
                 error.message = format!(
                     "Stopped after {} of {} notifications: {}",

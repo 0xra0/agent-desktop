@@ -100,14 +100,14 @@ fn a_listing_failure_before_any_dispatch_is_the_command_error() {
 }
 
 #[test]
-fn a_listing_failure_after_only_absent_entries_does_not_claim_a_send() {
+fn a_listing_failure_after_only_absent_entries_is_the_commands_error() {
     let entries = vec![
         notification_entry(1, "First"),
         notification_entry(2, "Second"),
     ];
     let mut listings = 0;
 
-    let (dismissed, failures) = super::dismiss_captured(
+    let result = super::dismiss_captured(
         &entries,
         || {
             listings += 1;
@@ -118,14 +118,10 @@ fn a_listing_failure_after_only_absent_entries_does_not_claim_a_send() {
             }
         },
         |_, _| Ok(()),
-    )
-    .expect("entries already gone keep the partial result");
+    );
 
-    let dispositions: Vec<_> = failures.iter().map(|failure| failure.disposition).collect();
-    assert_eq!(dismissed.len(), 1);
-    assert_eq!(dispositions, vec![DeliverySemantics::not_delivered()]);
-    assert_ne!(
-        DeliverySemantics::merged(dismissed.len(), &dispositions),
-        DeliverySemantics::delivered_unverified()
+    assert_eq!(
+        result.expect_err("nothing was sent").message,
+        "listing failed"
     );
 }
