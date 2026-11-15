@@ -36,7 +36,7 @@ impl AppError {
             .and_then(|error| error.suggestion.as_deref())
     }
 
-    pub(crate) fn adapter_error(&self) -> Option<&AdapterError> {
+    pub fn adapter_error(&self) -> Option<&AdapterError> {
         match self {
             Self::Adapter(error) => Some(error),
             Self::Io(error) => AdapterError::from_io(error),
