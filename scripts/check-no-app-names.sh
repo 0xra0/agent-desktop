@@ -23,14 +23,13 @@
 # is scanned.
 #
 # Three rules fire on the remaining lines:
-#   1. a string literal equal to an application name or id installed on this
-#      machine, plus a committed floor list for bare CI runners. A Linux
-#      desktop file id counts only when it is a reverse-DNS id: a bare one
-#      such as "code" is an ordinary word
+#   1. a string literal equal to a name or id in the committed list in
+#      collect_app_names, so the verdict is the same on every machine
 #   2. identity shapes that name any app: "<name>.exe", "<Name>.app",
 #      "<id>.desktop" or a Windows package family name
-#   3. an identity field (.name, .bundle_id, .title, ...) compared to a
-#      non-empty string literal, with the literal on either side
+#   3. an identity field (.name, .bundle_id, .title, ...), optionally called
+#      as .name() or .name.as_deref(), compared to a non-empty string literal,
+#      with the literal on either side
 #
 # Platform contracts are not applications and are listed in ALLOWED, which
 # changes only in review. An allowed literal is blanked, not the whole line, so
@@ -52,8 +51,6 @@ set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-OS="$(uname -s)"
-
 # The Dock and menu-bar agent bundle ids, the GNOME Shell/Mutter and KDE
 # StatusNotifier D-Bus names: platform surfaces the adapters must name.
 # flag("Terminal"): the Desktop Entry Terminal key is a platform field.
@@ -67,11 +64,11 @@ OS="$(uname -s)"
 # probe and the notification click target platform processes by contract.
 # whose description is "Clock": TRACKED DEFECT: English UI label; to be
 # replaced by the clock menu extra's non-localized identifier.
-ALLOWED='"(com\.apple\.(dock|MenuBarAgent|controlcenter|systemuiserver|systemevents)|org\.gnome\.(Shell|Mutter)(\.[A-Za-z.]+)?|org\.kde\.StatusNotifier(Item|Watcher))"|flag\("Terminal"\)|FRAMEWORK_ID: &str = "Chrome"|call_method\("Screenshot"|"NotificationCenter"|ShellKind::Dock => "Dock"|&\["loginwindow", "windowserver", "dock", "launchd", "finder"\]|"(csrss|wininit|winlogon|services|lsass|smss|lsaiso|dwm|explorer)\.exe"|"target": "System Events"|tell application "System Events" to tell its application process "ControlCenter"|whose description is \\?"Clock\\?"'
+ALLOWED='"(com\.apple\.(dock|MenuBarAgent|controlcenter|systemuiserver|systemevents)|org\.gnome\.(Shell|Mutter)(\.[A-Za-z.]+)?|org\.kde\.StatusNotifier(Item|Watcher))"|flag\("Terminal"\)|FRAMEWORK_ID: &str = "Chrome"|call_method\("Screenshot"|"NotificationCenter"|ShellKind::Dock => "Dock"|&\["loginwindow", "windowserver", "dock", "launchd", "finder"\]|"(csrss|wininit|winlogon|services|lsass|smss|lsaiso|dwm|explorer)\.exe"|"target": "System Events"|tell application "System Events" to tell its application process "ControlCenter"|whose description is \\?"Clock\\?"|thread::current\(\)\.name\(\) == Some\("[^"]*"\)'
 
 FIELDS='app_name|bundle_id|window_title|process_name|image_name|desktop_id|class_name|wm_class|app_id|executable|exe|image|name|app|title'
 RULE2='"[^"{}]+\.[Ee][Xx][Ee]"|"[A-Z][^"{}]*\.app"|"[A-Za-z0-9_.-]+\.desktop"|"[A-Za-z0-9]+(\.[A-Za-z0-9]+)+_[a-z0-9]{13}(![A-Za-z0-9_.]+)?"'
-RULE3="\\.(${FIELDS})[[:space:]]*(==|!=)[[:space:]]*\"[^\"]+\"|\\.(${FIELDS})[[:space:]]*==[[:space:]]*Some[[:space:]]*[(][[:space:]]*\"[^\"]+\"[[:space:]]*[)][[:space:]]*|\\.(${FIELDS})([(][)]|\\.as_deref[(][)]|\\.as_str[(][)])?[[:space:]]*\\.(eq|eq_ignore_ascii_case|contains|starts_with|ends_with)[[:space:]]*[(][[:space:]]*\"[^\"]+\"|(Some[[:space:]]*[(][[:space:]]*)?\"[^\"]+\"([[:space:]]*[)])?[[:space:]]*(==|!=)[[:space:]]*(Some[[:space:]]*[(][[:space:]]*)?&?[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*\\.(${FIELDS})([(][)])?(\\.as_deref[(][)]|\\.as_str[(][)])?([^A-Za-z0-9_(]|$)"
+RULE3="\\.(${FIELDS})([(][)]|\\.as_deref[(][)]|\\.as_str[(][)])?[[:space:]]*(==|!=)[[:space:]]*\"[^\"]+\"|\\.(${FIELDS})([(][)]|\\.as_deref[(][)]|\\.as_str[(][)])?[[:space:]]*(==|!=)[[:space:]]*Some[[:space:]]*[(][[:space:]]*\"[^\"]+\"[[:space:]]*[)][[:space:]]*|\\.(${FIELDS})([(][)]|\\.as_deref[(][)]|\\.as_str[(][)])?[[:space:]]*\\.(eq|eq_ignore_ascii_case|contains|starts_with|ends_with)[[:space:]]*[(][[:space:]]*\"[^\"]+\"|(Some[[:space:]]*[(][[:space:]]*)?\"[^\"]+\"([[:space:]]*[)])?[[:space:]]*(==|!=)[[:space:]]*(Some[[:space:]]*[(][[:space:]]*)?&?[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*\\.(${FIELDS})([(][)])?(\\.as_deref[(][)]|\\.as_str[(][)])?([^A-Za-z0-9_(]|$)"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/agent-desktop-app-names.XXXXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -317,85 +314,6 @@ function begin_skip(s) {
 }
 AWK_EOF
 
-emit_app() {
-    local app="$1" base plist
-    base="${app##*/}"
-    base="${base%.app}"
-    printf '%s\n' "$base"
-    plist="$app/Contents/Info.plist"
-    [ -f "$plist" ] && command -v plutil >/dev/null 2>&1 || return 0
-    plutil -extract CFBundleName raw -o - "$plist" 2>/dev/null || true
-    plutil -extract CFBundleDisplayName raw -o - "$plist" 2>/dev/null || true
-    plutil -extract CFBundleIdentifier raw -o - "$plist" 2>/dev/null || true
-}
-
-scan_app_dir() {
-    local app
-    for app in "$1"/*.app; do
-        [ -d "$app" ] || continue
-        emit_app "$app"
-    done
-}
-
-collect_macos_apps() {
-    local dir sub
-    for dir in /Applications /System/Applications /System/Applications/Utilities \
-               /System/Library/CoreServices "$HOME/Applications"; do
-        [ -d "$dir" ] || continue
-        scan_app_dir "$dir"
-        if [ "$dir" = "/Applications" ]; then
-            for sub in "$dir"/*/; do
-                [ -d "$sub" ] || continue
-                scan_app_dir "$sub"
-            done
-        fi
-    done
-}
-
-desk_name() {
-    awk '
-        /^\[Desktop Entry\]/ { insec = 1; next }
-        /^\[/ { insec = 0 }
-        insec == 1 && /^Name=/ {
-            sub(/^Name=/, "")
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "")
-            if ($0 != "") print
-            exit
-        }
-    ' "$1" 2>/dev/null
-}
-
-collect_linux_apps() {
-    local base appdir f id name dirs
-    dirs="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/var/lib/flatpak/exports/share"
-    if [ -n "${XDG_DATA_HOME:-}" ]; then
-        dirs="$XDG_DATA_HOME:$dirs"
-    elif [ -n "${HOME:-}" ]; then
-        dirs="$HOME/.local/share:$dirs"
-    fi
-    local IFS=':'
-    for base in $dirs; do
-        appdir="$base/applications"
-        [ -d "$appdir" ] || continue
-        for f in "$appdir"/*.desktop; do
-            [ -f "$f" ] || continue
-            id="${f##*/}"
-            id="${id%.desktop}"
-            case "$id" in
-                *.*) printf '%s\n' "$id" ;;
-            esac
-            name="$(desk_name "$f")"
-            [ -n "$name" ] && printf '%s\n' "$name"
-        done
-    done
-}
-
-collect_windows_apps() {
-    command -v powershell.exe >/dev/null 2>&1 || return 0
-    # shellcheck disable=SC2016
-    powershell.exe -NoProfile -Command 'Get-StartApps | ForEach-Object { $_.Name; $_.AppID }; Get-AppxPackage | ForEach-Object { $_.Name; $_.PackageFamilyName }' 2>/dev/null | tr -d '\r' || true
-}
-
 collect_app_names() {
     printf '%s\n' \
         'Finder' 'Safari' 'Xcode' 'TextEdit' 'Preview' 'Calculator' \
@@ -407,11 +325,6 @@ collect_app_names() {
         'com.apple.dt.Xcode' 'com.google.Chrome' \
         'com.tinyspeck.slackmacgap' 'org.gnome.Nautilus' \
         'org.gnome.TextEditor' 'org.gnome.gedit' 'org.kde.kate'
-    case "$OS" in
-        Darwin) collect_macos_apps ;;
-        Linux) collect_linux_apps ;;
-        MINGW*|MSYS*|CYGWIN*) collect_windows_apps ;;
-    esac
 }
 
 runtime_lines() {
@@ -453,6 +366,8 @@ self_test() {
     printf 'const N: &str = "Finder";\n' > "$root/crates/x/src/named.rs"
     printf 'const E: &str = "Foo.exe";\n' > "$root/crates/x/src/exe.rs"
     printf 'fn f(app: &App) -> bool { app.name == "Anything" }\n' > "$root/crates/x/src/cmp.rs"
+    printf 'fn f(app: &App) -> bool { app.name.as_deref() == Some("Anything") }\n' > "$root/crates/x/src/accessor.rs"
+    printf 'fn f(app: &App) -> bool { app.bundle_id() == "com.example.thing" }\n' > "$root/crates/x/src/getter.rs"
     printf 'const D: &str = "com.apple.dock";\n' > "$root/crates/x/src/allowed.rs"
     printf 'const P: &str = "clean";\n#[cfg(test)]\n#[path = "x_live.rs"]\nmod live;\n' > "$root/crates/x/src/live_parent.rs"
     printf 'const L: &str = "Finder";\n#[path = "x_live_child.rs"]\nmod child;\n' > "$root/crates/x/src/x_live.rs"
@@ -511,6 +426,14 @@ self_test() {
     fi
     if ! printf '%s\n' "$hits" | grep -q 'reversed\.rs'; then
         printf 'self-test FAIL (missed): a string literal compared to an identity field\n' >&2
+        failures=1
+    fi
+    if ! printf '%s\n' "$hits" | grep -q 'getter\.rs'; then
+        printf 'self-test FAIL (missed): an identity field compared through a getter\n' >&2
+        failures=1
+    fi
+    if ! printf '%s\n' "$hits" | grep -q 'accessor\.rs'; then
+        printf 'self-test FAIL (missed): an identity field compared through an accessor\n' >&2
         failures=1
     fi
     if printf '%s\n' "$hits" | grep -qE 'live_parent\.rs|x_live\.rs|x_live_child\.rs|allowed\.rs'; then
