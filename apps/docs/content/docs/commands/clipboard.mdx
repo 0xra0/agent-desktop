@@ -38,13 +38,13 @@ Check `found` before you read `text`. Errors: `INVALID_ARGS` for an unknown form
 
 ## clipboard-set
 
-Writes text, a PNG image, or a list of file paths.
+Writes text, a PNG image, or a list of file paths. Writing the clipboard needs `--headed`, because it replaces what the user copied; without it the command returns `POLICY_DENIED` and sends nothing.
 
 ```bash
-agent-desktop clipboard-set TEXT
-printf '%s' 'Hello' | agent-desktop clipboard-set --stdin
-agent-desktop clipboard-set --image /tmp/a.png
-agent-desktop clipboard-set --file-url /tmp/a.txt --file-url /tmp/b.txt
+agent-desktop --headed clipboard-set TEXT
+printf '%s' 'Hello' | agent-desktop --headed clipboard-set --stdin
+agent-desktop --headed clipboard-set --image /tmp/a.png
+agent-desktop --headed clipboard-set --file-url /tmp/a.txt --file-url /tmp/b.txt
 ```
 
 <table>
@@ -61,7 +61,7 @@ agent-desktop clipboard-set --file-url /tmp/a.txt --file-url /tmp/b.txt
 
 With `--stdin`, the command waits until the input ends. Empty input and all line breaks are kept, including a final newline. Use `printf '%s'` to avoid adding one. Input must be valid UTF-8 without NUL bytes (`\0`).
 
-`--stdin` keeps text out of process arguments. Batch uses the JSON `text` field, which puts the text in process arguments. Run secret steps as separate `--stdin` commands. To copy the text `--stdin`, use `agent-desktop clipboard-set -- --stdin`.
+`--stdin` keeps text out of process arguments. Batch uses the JSON `text` field, which puts the text in process arguments. Run secret steps as separate `--stdin` commands. To copy the text `--stdin`, use `agent-desktop --headed clipboard-set -- --stdin`.
 
 Without `--stdin`, one call writes one representation: `--file-url` wins over `--image`, which wins over `TEXT`. The result is an [OperationReport](/desktop/json-output#operationreport) plus the written `type`:
 
@@ -84,10 +84,10 @@ macOS reads the content back and reports `delivered_verified`; Windows and Linux
 
 ## clipboard-clear
 
-Empties the clipboard. It takes no arguments.
+Empties the clipboard, which needs `--headed` for the same reason as `clipboard-set`. It takes no arguments.
 
 ```bash
-agent-desktop clipboard-clear
+agent-desktop --headed clipboard-clear
 ```
 
 ```json
