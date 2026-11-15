@@ -25,7 +25,23 @@ pub unsafe extern "C" fn ad_list_apps(
             .inner
             .query_app_inventory(agent_desktop_core::AppInventoryQuery::All, deadline)
         {
-            Ok(agent_desktop_core::AppInventory { apps, .. }) => {
+            Ok(agent_desktop_core::AppInventory { apps, skipped }) => {
+                if !skipped.is_empty() {
+                    let error = agent_desktop_core::AdapterError::new(
+                        agent_desktop_core::ErrorCode::AppUnresponsive,
+                        format!(
+                            "The application list is incomplete: {} did not answer",
+                            skipped.len()
+                        ),
+                    )
+                    .with_details(serde_json::json!({
+                        "kind": "app_inventory_incomplete",
+                        "skipped": skipped,
+                    }))
+                    .unsent();
+                    set_last_error(&error);
+                    return crate::error::last_error_code();
+                }
                 if let Err(error) = crate::resource::validate_list_len(apps.len(), "App list") {
                     set_last_error(&error);
                     return crate::error::last_error_code();
