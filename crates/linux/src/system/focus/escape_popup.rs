@@ -1,24 +1,20 @@
-//! Escape for an application that does not own the active window.
+//! The open popup of a window that does not own the active window.
 //!
-//! The key route sends the key only to the active window, so a key for a
-//! background application is refused. A popup that the application opened
-//! stays open in the background on some toolkits, and the key cannot reach
-//! it. The popup has an owner: a combo box, or a button that has a popup. The
-//! owner's own action toggles the popup, so the action is sent only when a
-//! read shows the popup open, and the result is verified by reading it gone.
-//!
-//! Three states, in this order: the key route is allowed and nothing here
-//! runs; the key route is refused for focus and an open popup owner exists
-//! in the target window, whose own action closes it; otherwise the refusal
-//! stays as it was. The owner's reply is the answer, so a rejected action
+//! The key route sends Escape only to the active window, and core asks the
+//! adapter to close the open transient surface when that key was refused for
+//! focus. A popup that the application opened stays open in the background on
+//! some toolkits. The popup has an owner: a combo box, or a button that has a
+//! popup. The owner's own action toggles the popup, so the action is sent
+//! only when a read shows the popup open, and the result is verified by
+//! reading it gone. The owner's reply is the answer, so a rejected action
 //! delivers nothing and an owner that does not answer leaves the delivery
-//! uncertain; the key route's refusal replaces neither.
+//! uncertain.
 
 use std::time::Duration;
 
 use agent_desktop_core::{
-    Action, ActionResult, AdapterError, ChainRung, Deadline, DeliveryOutcome, KeyCombo,
-    StepMechanism, WindowInfo,
+    Action, ActionResult, AdapterError, ChainRung, Deadline, DeliveryOutcome, InteractionLease,
+    InteractionPolicy, KeyCombo, ProcessIdentity, StepMechanism, WindowInfo,
 };
 
 use crate::actions::action_call::do_action;
@@ -34,29 +30,15 @@ use crate::tree::vocabulary::role_numbers::{
     COMBO_BOX, MENU, POPUP_MENU, PUSH_BUTTON, PUSH_BUTTON_MENU, TOGGLE_BUTTON,
 };
 use crate::tree::vocabulary::state_bits::{EXPANDED, HAS_POPUP, SHOWING, StateBits};
-use crate::tree::{AtspiElement, ObservedRead, WalkedNode, get_live_actions};
+use crate::tree::{AtspiElement, ObservedRead, WalkedNode};
 
 const SCAN_NODES: usize = 600;
 const OWNER_NODES: usize = 64;
 const POPUP_CONTAINER_CHILDREN: usize = 16;
 const CLOSE_SETTLE: Duration = Duration::from_millis(1000);
 const CLOSE_STEP: Duration = Duration::from_millis(50);
-const FOCUS_CHECKS: [&str; 2] = ["window_active", "exact_window_focus"];
 const SUGGESTION: &str = "Refresh the snapshot and check whether the popup is still open.";
 const CLOSE_LABEL: &str = "Action.DoAction";
-
-pub(super) fn is_plain_escape(combo: &KeyCombo) -> bool {
-    combo.modifiers.is_empty() && combo.key.eq_ignore_ascii_case("escape")
-}
-
-pub(super) fn is_focus_refusal(error: &AdapterError) -> bool {
-    error
-        .details
-        .as_ref()
-        .and_then(|details| details.get("check"))
-        .and_then(|check| check.as_str())
-        .is_some_and(|check| FOCUS_CHECKS.contains(&check))
-}
 
 fn bits(node: &WalkedNode<ObservedRead>) -> Option<StateBits<'_>> {
     node.payload
@@ -146,17 +128,15 @@ fn press_owner(
     deadline: Deadline,
 ) -> Result<WriteReply, AdapterError> {
     let handle = owner.clone().into_native_handle();
-    let names = get_live_actions(bus, &handle, deadline)?.unwrap_or_default();
-    do_action(
-        &Target {
-            bus,
-            handle: &handle,
-            element: owner,
-            deadline,
-        },
-        &names,
-        click_verbs(role),
-    )
+    let target = Target {
+        bus,
+        handle: &handle,
+        element: owner,
+        deadline,
+    };
+    let view = target.view()?;
+    let names = view.action_names().unwrap_or_default();
+    do_action(&target, names, click_verbs(role))
 }
 
 /// What the owner's reply settles. A reply of false delivered nothing, so the
@@ -168,30 +148,17 @@ fn popup_outcome(reply: WriteReply, read_closed: impl FnOnce() -> Option<bool>) 
     }
 }
 
-/// The answer for a refused Escape: the popup attempt's own result, or its own
-/// error, which already says whether that attempt may have landed. The refusal
-/// stands only when the target window shows no open popup owner.
-pub(super) fn popup_answer(
-    refusal: AdapterError,
-    popup: Result<Option<ActionResult>, AdapterError>,
-) -> Result<ActionResult, AdapterError> {
-    match popup {
-        Ok(Some(settled)) => Ok(settled),
-        Ok(None) => Err(refusal),
-        Err(attempt) => Err(attempt),
-    }
-}
-
-/// The refused Escape of a background application, answered by closing the
-/// open popup its target window shows. `Ok(None)` leaves the refusal as it was;
-/// every other result, the popup attempt's own failure included, is the answer.
-pub(super) fn close_open_popup(
+/// The open popup of the target window, closed through its owner. `None`
+/// when no popup is open, which leaves core's refusal as it was; every other
+/// result, the attempt's own failure included, is the answer.
+pub(crate) fn close_transient_surface(
     bus: &SharedBus,
-    pid: u32,
+    process: &ProcessIdentity,
     window: Option<&WindowInfo>,
-    combo: &KeyCombo,
-    deadline: Deadline,
+    _policy: InteractionPolicy,
+    lease: &InteractionLease,
 ) -> Result<Option<ActionResult>, AdapterError> {
+    let (pid, deadline) = (process.pid.get(), lease.deadline());
     let mut best: Option<(usize, AtspiElement, Option<u32>)> = None;
     for frame in frames_of(bus, pid, window, deadline)? {
         let walk = scan_walk_structure(
@@ -229,13 +196,11 @@ pub(super) fn close_open_popup(
         mechanism: StepMechanism::SemanticApi,
         run: Box::new(run),
     }];
-    run_semantic_chain(
-        &Action::PressKey(combo.clone()),
-        &mut rungs,
-        deadline,
-        SUGGESTION,
-    )
-    .map(Some)
+    let escape = Action::PressKey(KeyCombo {
+        key: "escape".to_owned(),
+        modifiers: Vec::new(),
+    });
+    run_semantic_chain(&escape, &mut rungs, deadline, SUGGESTION).map(Some)
 }
 
 #[cfg(test)]
