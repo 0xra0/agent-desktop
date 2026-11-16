@@ -5,9 +5,9 @@
 //! flips it with no foreground change on SysTreeView32, WinForms and WPF
 //! trees (C7), so it runs only from a known opposite state and is verified by
 //! re-reading the state. ExpandCollapsePattern on a tree item takes no
-//! foreground (A31-5). On any other control it can open a popup over the
+//! foreground (A31-5). On any other control an expand can open a popup over the
 //! user's window (C6), so it declares the foreground effect and a policy that
-//! does not allow it refuses.
+//! does not allow it refuses; a collapse opens nothing and declares none.
 
 use agent_desktop_core::{ActionStep, AdapterError, Deadline, InteractionPolicy};
 use std::time::Duration;
@@ -109,7 +109,7 @@ mod imp {
                 rung(
                     label,
                     pattern_ok && current != Some(ExpandKind::LeafNode),
-                    !tree_item,
+                    want_expanded && !tree_item,
                     &mut pattern,
                 ),
                 rung(LEGACY_LABEL, flips, false, &mut legacy),

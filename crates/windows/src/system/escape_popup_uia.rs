@@ -1,26 +1,19 @@
 //! The UI Automation half of `escape_popup`: the popup search, the collapse and the two entry points.
 
-use super::{PopupScope, is_plain_escape, opens_a_popup, refused_for_focus};
+use super::opens_a_popup;
 use agent_desktop_core::{
-    Action, ActionResult, AdapterError, Deadline, DeliveryOutcome, InteractionPolicy, KeyCombo,
-    ProcessIdentity, WindowInfo,
+    Action, ActionResult, AdapterError, Deadline, InteractionPolicy, KeyCombo, ProcessIdentity,
+    WindowInfo,
 };
-use std::time::Duration;
-use uiautomation::patterns::UIExpandCollapsePattern;
 use uiautomation::types::{TreeScope, UIProperty};
 use uiautomation::variants::Variant;
 
-use crate::actions::chain::{offered, poll_until, rung};
-use crate::actions::mutation::{classify_success, classify_write};
+use crate::actions::disclosure::disclosure_steps;
 use crate::tree::element::UIAElement;
 use crate::tree::properties::property_ids::TreeProperty;
 use crate::tree::properties::read_one;
 
-const COLLAPSE_LABEL: &str = "ExpandCollapsePattern.Collapse";
-const COLLAPSE_SUGGESTION: &str = "Close the popup with the key while its window is in front.";
-const VERIFY_TIMEOUT: Duration = Duration::from_millis(600);
 const EXPANDED: i32 = 1;
-const COLLAPSED: i32 = 0;
 
 /// The deepest expanded popup owner among the elements below `roots`: a
 /// document-order search, so the last match is the innermost level.
@@ -80,65 +73,28 @@ fn process_roots(process: &ProcessIdentity) -> Vec<UIAElement> {
         .unwrap_or_default()
 }
 
-fn collapse(owner: &UIAElement) -> Result<bool, AdapterError> {
-    match owner.0.get_pattern::<UIExpandCollapsePattern>() {
-        Ok(pattern) => match pattern.collapse() {
-            Ok(()) => classify_success(),
-            Err(error) => classify_write("Collapse", COLLAPSE_LABEL, &error),
-        },
-        Err(error) => classify_write("get_pattern", COLLAPSE_LABEL, &error),
-    }
-}
-
-fn close_popup(
-    owner: &UIAElement,
-    combo: &KeyCombo,
+/// Collapses the deepest open popup of the window (or of the process), and
+/// reads its state back.
+pub(crate) fn close_transient_surface(
+    process: &ProcessIdentity,
+    window: Option<&WindowInfo>,
     policy: InteractionPolicy,
     deadline: Deadline,
-) -> Result<ActionResult, AdapterError> {
-    let mut run = || {
-        if !collapse(owner)? {
-            return Ok(DeliveryOutcome::NotDelivered);
-        }
-        let closed = poll_until(deadline, VERIFY_TIMEOUT, || {
-            read_one(owner, TreeProperty::ExpandCollapseState).number() == Some(COLLAPSED)
-        });
-        Ok(DeliveryOutcome::from_delivery(true, closed))
+) -> Result<Option<ActionResult>, AdapterError> {
+    let roots = match window {
+        Some(window) => window_roots(window, deadline),
+        None => process_roots(process),
     };
-    let steps = agent_desktop_core::execute_chain(
-        &mut offered([rung(COLLAPSE_LABEL, true, false, &mut run)]),
-        policy,
-        deadline,
-        COLLAPSE_SUGGESTION,
-    )?;
-    Ok(ActionResult::from_execution(
-        &Action::PressKey(combo.clone()),
+    let Some(owner) = deepest_popup_owner(&roots) else {
+        return Ok(None);
+    };
+    let steps = disclosure_steps(&owner, false, policy, deadline)?;
+    let escape = KeyCombo {
+        key: "escape".to_owned(),
+        modifiers: Vec::new(),
+    };
+    Ok(Some(ActionResult::from_execution(
+        &Action::PressKey(escape),
         steps,
-    ))
-}
-
-/// The key route's result, or, when it refused a plain Escape for focus and
-/// the scope shows an open popup, the collapse of that popup's owner.
-pub(crate) fn after_key_route(
-    result: Result<ActionResult, AdapterError>,
-    scope: PopupScope<'_>,
-    combo: &KeyCombo,
-    policy: InteractionPolicy,
-    deadline: Deadline,
-) -> Result<ActionResult, AdapterError> {
-    let Err(refusal) = result else {
-        return result;
-    };
-    let window_scope = matches!(scope, PopupScope::Window(_));
-    if !is_plain_escape(combo) || !refused_for_focus(window_scope, &refusal) {
-        return Err(refusal);
-    }
-    let roots = match scope {
-        PopupScope::Window(window) => window_roots(window, deadline),
-        PopupScope::Process(process) => process_roots(process),
-    };
-    match deepest_popup_owner(&roots) {
-        Some(owner) => close_popup(&owner, combo, policy, deadline),
-        None => Err(refusal),
-    }
+    )))
 }

@@ -47,7 +47,6 @@ pub use actions::witness_change::WitnessChange;
 pub use adapter::PlatformAdapter;
 pub use adapter::actions::ActionOps;
 pub use adapter::adapter_session::AdapterSession;
-pub use adapter::focused_window_key::press_key_in_focused_window;
 pub use adapter::hit_test::HitTestResult;
 pub use adapter::input::InputOps;
 pub use adapter::live_element::LiveElement;
