@@ -79,8 +79,8 @@ fn uncertain() -> Result<ActionResult, AdapterError> {
 
 #[test]
 fn the_dispatch_result_chooses_the_step() {
-    assert_eq!(witness_step(&unverified()), WitnessStep::ReadOnce);
-    assert_eq!(witness_step(&uncertain()), WitnessStep::Settle);
+    assert_eq!(witness_step(&unverified()), WitnessStep::Read);
+    assert_eq!(witness_step(&uncertain()), WitnessStep::Read);
     let verified = ActionResult::delivered_unverified("click").with_verified_delivery();
     assert_eq!(witness_step(&Ok(verified)), WitnessStep::Leave);
     let refused = Err(AdapterError::new(ErrorCode::PolicyDenied, "no")
@@ -128,6 +128,19 @@ fn a_weak_or_no_change_leaves_the_delivery_as_it_was() {
 #[test]
 fn an_unclear_answer_with_a_strong_change_is_delivered_and_stays_an_error() {
     let adapter = adapter(
+        vec![Ok(witness(false, "A")), Ok(witness(true, "A"))],
+        uncertain(),
+    );
+    let error = run(&adapter).unwrap_err();
+
+    assert_eq!(error.disposition, DeliverySemantics::delivered_verified());
+    assert_eq!(error.details.unwrap()["effect"], "observed");
+    assert_eq!(*adapter.read_count.lock().unwrap(), 2);
+}
+
+#[test]
+fn an_unclear_answer_with_no_change_stays_uncertain_without_a_wait() {
+    let adapter = adapter(
         vec![
             Ok(witness(false, "A")),
             Ok(witness(false, "A")),
@@ -135,22 +148,13 @@ fn an_unclear_answer_with_a_strong_change_is_delivered_and_stays_an_error() {
         ],
         uncertain(),
     );
-    let error = run(&adapter).unwrap_err();
-
-    assert_eq!(error.disposition, DeliverySemantics::delivered_verified());
-    assert_eq!(error.details.unwrap()["effect"], "observed");
-    assert_eq!(*adapter.read_count.lock().unwrap(), 3);
-}
-
-#[test]
-fn an_unclear_answer_with_no_change_stays_uncertain_after_the_settle_time() {
-    let adapter = adapter(vec![Ok(witness(false, "A"))], uncertain());
     let started = std::time::Instant::now();
     let error = run(&adapter).unwrap_err();
 
     assert_eq!(error.disposition, DeliverySemantics::uncertain());
     assert_eq!(error.details.unwrap()["effect"], "not_observed");
-    assert!(started.elapsed() >= SETTLE);
+    assert_eq!(*adapter.read_count.lock().unwrap(), 2);
+    assert!(started.elapsed() < std::time::Duration::from_millis(40));
 }
 
 #[test]
@@ -194,4 +198,20 @@ fn no_witness_and_an_undelivered_action_are_left_alone() {
         DeliverySemantics::not_delivered()
     );
     assert_eq!(*refused.read_count.lock().unwrap(), 1);
+}
+
+#[test]
+fn a_delivery_without_proof_is_read_once_without_a_wait() {
+    let adapter = adapter(
+        vec![
+            Ok(witness(false, "A")),
+            Ok(witness(false, "A")),
+            Ok(witness(true, "A")),
+        ],
+        unverified(),
+    );
+    let result = run(&adapter).unwrap();
+
+    assert_eq!(result.effect, Some(ObservedEffect::NotObserved));
+    assert_eq!(*adapter.read_count.lock().unwrap(), 2);
 }
