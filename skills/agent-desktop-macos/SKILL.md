@@ -64,8 +64,11 @@ may report `unknown` when consent would require a prompt.
   Return go only to that editor. An application that moves a value into an editor of
   its own, as a spreadsheet does with a formula that starts with `=`, leaves it typed
   and open, and the write fails as `delivered_unverified`: commit it with
-  `press return --app <app>`. Such a cell publishes no value, so a committed write is
-  `delivered_unverified` too: read the cell's name to verify. The write also commits
+  `press return --app <app>`. The cell is read after the commit: a cell that still
+  shows nothing fails as `ACTION_FAILED` with `delivered_unverified`, and one that
+  shows another value stays `delivered_unverified`. An application that gives its
+  cell editor no keyboard input from a press always takes that failure; type there
+  with `--headed` only if the user explicitly asked for that. The write also commits
   an edit that is open in another cell.
 - AX success alone does not prove an application effect. Verify the task's
   result independently, especially after a menu action or a value write.

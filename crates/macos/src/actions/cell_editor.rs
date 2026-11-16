@@ -13,6 +13,7 @@ use agent_desktop_core::{
     AdapterError, Deadline, DeliveryOutcome, DeliverySemantics, ErrorCode, KeyCombo,
 };
 
+use crate::actions::cell_read_back::{ReadBack, classify as classify_read_back};
 use crate::actions::chain::press_selection;
 use crate::actions::{DeliveryTracker, ax_helpers, background_keyboard};
 use crate::tree::AXElement;
@@ -150,12 +151,13 @@ pub(crate) fn replace(
 /// The cell is pressed, the way a click presses it, until its editor holds
 /// the application's keyboard focus, at most twice, because a first press can
 /// only select the cell. The editor's text is then replaced and Return commits
-/// it. The cell is not read after the commit, so a write that sent anything
-/// is delivered and unverified. Text and Return go only to the editor inside
-/// this cell. When the application moves the edit into another element, as a
-/// formula can, the write stops there and fails as delivered and unverified.
-/// A cell that was pressed and took no text fails the same way: nothing was
-/// typed.
+/// it. The cell is read back after the commit: a write the cell shows is
+/// verified, a cell that still shows nothing fails, and a cell that shows
+/// another value stays delivered and unverified. Text and Return go only to the
+/// editor inside this cell. When the application moves the edit into another
+/// element, as a formula can, the write stops there and fails as delivered and
+/// unverified. A cell that was pressed and took no text fails the same way:
+/// nothing was typed.
 pub(crate) fn write(
     cell: &AXElement,
     value: &str,
@@ -192,6 +194,9 @@ pub(crate) trait CellEdit {
 
     /// Sends Return to the editor.
     fn commit(&mut self, editor: &Self::Editor) -> Result<(), AdapterError>;
+
+    /// Reads the cell's value back after the commit.
+    fn read_back(&mut self, value: &str) -> Result<ReadBack, AdapterError>;
 }
 
 /// The write sequence over `edit`. An error after anything was sent is
@@ -223,7 +228,11 @@ fn write_steps<E: CellEdit>(
     }
     edit.commit(&editor)?;
     *sent = true;
-    Ok(DeliveryOutcome::from_delivery(true, false))
+    Ok(match edit.read_back(value)? {
+        ReadBack::Matches => DeliveryOutcome::from_delivery(true, true),
+        ReadBack::Differs => DeliveryOutcome::from_delivery(true, false),
+        ReadBack::Empty => return cell_took_nothing(),
+    })
 }
 
 fn open_editor<E: CellEdit>(
@@ -249,7 +258,6 @@ struct LiveCell<'a> {
     cell: &'a AXElement,
     deadline: Deadline,
 }
-
 impl CellEdit for LiveCell<'_> {
     type Editor = AXElement;
 
@@ -282,6 +290,18 @@ impl CellEdit for LiveCell<'_> {
     fn commit(&mut self, editor: &AXElement) -> Result<(), AdapterError> {
         background_keyboard::press(editor, &return_key(), self.deadline)
     }
+
+    fn read_back(&mut self, value: &str) -> Result<ReadBack, AdapterError> {
+        let read = || {
+            classify_read_back(
+                crate::tree::copy_value_typed(self.cell, self.deadline).as_deref(),
+                value,
+            )
+        };
+        Ok(self
+            .deadline
+            .poll_until(SETTLE, SETTLE_POLL, read, |read| *read != ReadBack::Empty))
+    }
 }
 
 /// The end of a write whose editor lost the keyboard focus before the commit,
@@ -311,6 +331,19 @@ pub(crate) fn nothing_typed(pressed: bool) -> Result<DeliveryOutcome, AdapterErr
         "The cell was pressed and nothing was typed: it gave no text editor, or the editor's text could not be read or selected",
     )
     .with_suggestion(NO_EDITOR_SUGGESTION)
+    .with_disposition(DeliverySemantics::delivered_unverified()))
+}
+
+/// The end of a write whose cell still shows nothing after the commit: the
+/// application took the keys and dropped them instead of the text.
+pub(crate) fn cell_took_nothing() -> Result<DeliveryOutcome, AdapterError> {
+    Err(AdapterError::new(
+        ErrorCode::ActionFailed,
+        "The text was typed and committed, but the cell still shows nothing",
+    )
+    .with_suggestion(
+        "Bring the application to the front and retry, or type into the cell with --headed only if the user explicitly asked for that, then read the cell to verify the write.",
+    )
     .with_disposition(DeliverySemantics::delivered_unverified()))
 }
 
