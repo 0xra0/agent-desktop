@@ -198,7 +198,7 @@ fn find_menu_descendant(
     source: String,
     deadline: Deadline,
 ) -> Result<Option<(String, AXElement)>, AdapterError> {
-    find_menu_descendant_with(root, source, deadline, |element| {
+    find_menu_descendant_with(root, source, deadline, |element, expand| {
         let role = surface_read::string(element, "AXRole", deadline)?;
         if role.as_deref() == Some("AXMenuBar") {
             return Ok((false, Vec::new()));
@@ -208,6 +208,9 @@ fn find_menu_descendant(
         {
             return Ok((true, Vec::new()));
         }
+        if !expand {
+            return Ok((false, Vec::new()));
+        }
         Ok((
             false,
             surface_read::elements(element, "AXChildren", deadline)?,
@@ -215,22 +218,29 @@ fn find_menu_descendant(
     })
 }
 
+/// Breadth-first search for an open menu below `root`. A menu hangs directly
+/// below the element that shows it, so every child is checked, but the items
+/// of a content container (more than `ANCHOR_CHILD_LIMIT` children: a list,
+/// a table, a column of a browser) are not opened: what lies inside an item is
+/// that item's content, and reading it made the search grow with the content
+/// of every window. `inspect` gets whether it may return the element's
+/// children.
 fn find_menu_descendant_with<T>(
     root: T,
     source: String,
     deadline: Deadline,
-    mut inspect: impl FnMut(&T) -> Result<(bool, Vec<T>), AdapterError>,
+    mut inspect: impl FnMut(&T, bool) -> Result<(bool, Vec<T>), AdapterError>,
 ) -> Result<Option<(String, T)>, AdapterError> {
-    let mut pending = std::collections::VecDeque::from([(source, root)]);
+    let mut pending = std::collections::VecDeque::from([(source, root, true)]);
     let mut incomplete = None;
     let mut visited = 0_usize;
-    while let Some((path, element)) = pending.pop_front() {
+    while let Some((path, element, expand)) = pending.pop_front() {
         surface_read::ensure_before_deadline(deadline)?;
         visited += 1;
         if visited > MAX_SURFACE_NODES {
             return Err(surface_limit_error());
         }
-        let (is_menu, children) = match inspect(&element) {
+        let (is_menu, children) = match inspect(&element, expand) {
             Ok(observed) => observed,
             Err(error) if error.code == ErrorCode::AppUnresponsive && !invalidated(&error) => {
                 incomplete.get_or_insert(error);
@@ -241,11 +251,12 @@ fn find_menu_descendant_with<T>(
         if is_menu {
             return Ok(Some((path, element)));
         }
+        let expand_children = children.len() <= super::surface_inventory::ANCHOR_CHILD_LIMIT;
         pending.extend(
             children
                 .into_iter()
                 .enumerate()
-                .map(|(index, child)| (format!("{path}/children/{index}"), child)),
+                .map(|(index, child)| (format!("{path}/children/{index}"), child, expand_children)),
         );
     }
     incomplete.map_or(Ok(None), Err)
