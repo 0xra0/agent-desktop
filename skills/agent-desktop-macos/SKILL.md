@@ -37,6 +37,8 @@ may report `unknown` when consent would require a prompt.
 - Native AX element tokens identify individual controls, including twins. A stale
   token never falls back to a look-alike search. Elements without a token follow
   the uniqueness rule of the core skill.
+- `list-windows` also lists a floating or panel window an app raises above the
+  normal level, as accessory apps do with settings and panels, while it is on screen.
 - `menu` and `menubar` observations are application-owned and can omit `data.window`.
   An app without an ordinary window may still expose process-owned surfaces.
   Inspect `supported_surfaces` rather than assuming every surface exists.
