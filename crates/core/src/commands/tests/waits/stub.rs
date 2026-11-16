@@ -68,6 +68,14 @@ pub(super) struct Stub {
 }
 
 impl ObservationOps for Stub {
+    fn list_surfaces(
+        &self,
+        _: ProcessIdentity,
+        _: Deadline,
+    ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+        Ok(Vec::new())
+    }
+
     fn observe_tree(
         &self,
         root: crate::locator::live_locator::ObservationRoot<'_>,

@@ -6,7 +6,7 @@ use crate::{
         wait_element::{ElementWaitInput, wait_for_element},
         wait_mode::WaitMode,
         wait_notification,
-        wait_surface::SurfaceWait,
+        wait_surface::{self, SurfaceWait},
         wait_text_match, wait_timeout,
     },
     context::CommandContext,
@@ -64,6 +64,7 @@ pub fn execute(
             Ok(json!({ "waited_ms": ms }))
         }
         WaitMode::Menu { app, open } => wait_for_menu(app, open, timeout_ms, adapter),
+        WaitMode::Surface { app, kind } => wait_for_surface(app, kind, timeout_ms, adapter),
         WaitMode::Notification { app, text } => {
             wait_notification::wait_for_notification(app, text, timeout_ms, adapter, context)
         }
@@ -131,6 +132,56 @@ fn wait_for_menu(
         })?;
     let elapsed = start.elapsed().as_millis();
     Ok(json!({ "found": true, "elapsed_ms": elapsed }))
+}
+
+/// Polls the application's surface list until one of the asked kind is open.
+/// A kind the platform cannot show is refused before the wait starts.
+fn wait_for_surface(
+    app: Option<String>,
+    kind: Option<crate::SnapshotSurface>,
+    timeout_ms: u64,
+    adapter: &dyn PlatformAdapter,
+) -> Result<Value, AppError> {
+    if let Some(kind) = kind {
+        adapter.check_surface_support(kind)?;
+    }
+    let start = Instant::now();
+    let deadline = crate::Deadline::at(start, timeout_ms)?;
+    let target = resolve_app(app.as_deref(), adapter, deadline)?;
+    let process = crate::commands::helpers::process_identity(&target)?;
+    let open = |surfaces: &[crate::SurfaceInfo]| {
+        surfaces
+            .iter()
+            .find(|surface| wait_surface::is_kind(surface, kind))
+            .cloned()
+    };
+    let surfaces = match deadline.poll_until(
+        deadline.remaining(),
+        Duration::from_millis(100),
+        || adapter.list_surfaces(process.clone(), deadline),
+        |read| {
+            read.as_ref()
+                .map_or(true, |surfaces| open(surfaces).is_some())
+        },
+    ) {
+        Ok(surfaces) => surfaces,
+        Err(error) if deadline.is_expired() || wait_timeout::is_deadline_expired(&error) => {
+            Vec::new()
+        }
+        Err(error) => return Err(error.into()),
+    };
+    match open(&surfaces) {
+        Some(surface) => Ok(json!({
+            "found": true,
+            "surface": surface,
+            "elapsed_ms": start.elapsed().as_millis(),
+        })),
+        None => wait_timeout::surface(
+            kind.map_or("any", |kind| kind.as_str()),
+            timeout_ms,
+            &surfaces,
+        ),
+    }
 }
 
 fn wait_for_window(

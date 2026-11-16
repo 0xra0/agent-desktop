@@ -88,8 +88,8 @@ Request `--cdp` only for the step that needs it. `close-app` ends the exposure.
   and exit 0 can include failures. Read each entry's `ok`, even with `--stop-on-error`,
   which stops later steps after a failure.
 - Lifecycle verification: put an action immediately before its event `wait` in the same
-  batch so the baseline is captured before the action. A standalone event wait starts
-  its baseline when it observes and can miss an already-completed transition.
+  batch so the baseline is captured before the action; a later event wait can miss an
+  already-completed transition. A surface a click opens late is a state: `wait --surface <kind> --app <app>`.
 - Targeting: use `find` when the role or name is known; explore a large window with
   a skeleton snapshot and a `--root` drill.
 - Tables: a table node reports `row_count` and `column_count`; a skeleton keeps it as one

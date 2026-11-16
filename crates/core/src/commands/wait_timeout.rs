@@ -28,6 +28,22 @@ pub(crate) fn menu(mut error: AdapterError, timeout_ms: u64) -> AppError {
     AppError::Adapter(error)
 }
 
+pub(crate) fn surface(
+    kind: &str,
+    timeout_ms: u64,
+    observed: &[crate::SurfaceInfo],
+) -> Result<Value, AppError> {
+    let what = if kind == "any" {
+        "No surface".to_owned()
+    } else {
+        format!("No {kind} surface")
+    };
+    timeout_err(
+        format!("{what} was open within {timeout_ms}ms"),
+        json!({ "predicate": "surface", "surface": kind, "timeout_ms": timeout_ms, "last_observed": observed }),
+    )
+}
+
 /// Builds the wait-loop TIMEOUT error. Every payload carries
 /// `kind: "wait_timeout"` so agents can discriminate it from the chain
 /// deadline TIMEOUT schema (`kind: "chain_deadline"`) without sniffing

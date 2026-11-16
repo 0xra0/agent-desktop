@@ -107,3 +107,21 @@ fn event_wait_reports_the_window_and_app_events() {
         include_str!("../../../../../../tests/fixtures/contract/waits-event.json")
     );
 }
+
+#[test]
+fn a_surface_wait_for_a_kind_the_platform_cannot_show_is_refused_at_once() {
+    let started = std::time::Instant::now();
+    let error = run(
+        &Stub::default(),
+        mode!(
+            surface,
+            SurfaceWait::Open(Some(crate::SnapshotSurface::Popover))
+        ),
+        Some("TextEdit"),
+        5_000,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code(), "PLATFORM_NOT_SUPPORTED");
+    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+}
