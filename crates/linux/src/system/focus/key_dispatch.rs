@@ -4,7 +4,7 @@ use agent_desktop_core::{
 };
 use serde_json::json;
 
-use super::escape_popup::{close_open_popup, is_focus_refusal, is_plain_escape};
+use super::escape_popup::{close_open_popup, is_focus_refusal, is_plain_escape, popup_answer};
 use crate::input::backend::Backend;
 use crate::input::physical::target_keyboard::press_for_process;
 use crate::input::physical::target_world::{LiveWorld, PhysicalWorld};
@@ -218,10 +218,8 @@ fn closing_popup_when_refused(
 ) -> Result<ActionResult, AdapterError> {
     match result {
         Err(error) if is_plain_escape(combo) && is_focus_refusal(&error) => {
-            match close_open_popup(bus, target.0, target.1, combo, deadline) {
-                Ok(Some(closed)) => Ok(closed),
-                Ok(None) | Err(_) => Err(error),
-            }
+            let popup = close_open_popup(bus, target.0, target.1, combo, deadline);
+            popup_answer(error, popup)
         }
         other => other,
     }

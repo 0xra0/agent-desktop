@@ -10,7 +10,9 @@
 //! Three states, in this order: the key route is allowed and nothing here
 //! runs; the key route is refused for focus and an open popup owner exists
 //! in the target window, whose own action closes it; otherwise the refusal
-//! stays as it was.
+//! stays as it was. The owner's reply is the answer, so a rejected action
+//! delivers nothing and an owner that does not answer leaves the delivery
+//! uncertain; the key route's refusal replaces neither.
 
 use std::time::Duration;
 
@@ -19,20 +21,21 @@ use agent_desktop_core::{
     StepMechanism, WindowInfo,
 };
 
-use crate::actions::action_call::resolve_verb;
+use crate::actions::action_call::do_action;
 use crate::actions::chain::run_semantic_chain;
+use crate::actions::context::Target;
+use crate::actions::write::mutation::WriteReply;
+use crate::system::SharedBus;
 use crate::system::window::window_id;
 use crate::system::window::window_ops::windows_of_process;
-use crate::system::{SharedBus, within};
 use crate::tree::capabilities::action_names::click_verbs;
 use crate::tree::menu::observe_menu::{rooted, scan_walk_structure};
 use crate::tree::vocabulary::role_numbers::{
     COMBO_BOX, MENU, POPUP_MENU, PUSH_BUTTON, PUSH_BUTTON_MENU, TOGGLE_BUTTON,
 };
 use crate::tree::vocabulary::state_bits::{EXPANDED, HAS_POPUP, SHOWING, StateBits};
-use crate::tree::{AtspiElement, ObservedRead, WalkedNode, call, get_live_actions};
+use crate::tree::{AtspiElement, ObservedRead, WalkedNode, get_live_actions};
 
-const ACTION_INTERFACE: &str = "org.a11y.atspi.Action";
 const SCAN_NODES: usize = 600;
 const OWNER_NODES: usize = 64;
 const POPUP_CONTAINER_CHILDREN: usize = 16;
@@ -133,34 +136,55 @@ fn still_open(bus: &SharedBus, owner: &AtspiElement, deadline: Deadline) -> Opti
     Some(is_open_owner(&walk))
 }
 
+/// Presses the popup owner's own action and keeps its reply: no matching verb
+/// or a reply of false is `WriteReply::Absent`, and a call that timed out after
+/// it was sent keeps the uncertain delivery the write path gives it.
 fn press_owner(
     bus: &SharedBus,
     owner: &AtspiElement,
     role: Option<u32>,
     deadline: Deadline,
-) -> Result<bool, AdapterError> {
+) -> Result<WriteReply, AdapterError> {
     let handle = owner.clone().into_native_handle();
     let names = get_live_actions(bus, &handle, deadline)?.unwrap_or_default();
-    let Some(index) = resolve_verb(&names, click_verbs(role)) else {
-        return Ok(false);
-    };
-    let connection = bus.get(deadline)?;
-    within(deadline, async {
-        call(
-            connection.inner(),
-            owner,
-            ACTION_INTERFACE,
-            "DoAction",
-            &(index,),
-        )
-        .await
-        .map(|_| true)
-        .map_err(|error| crate::system::classify(&error))
-    })
+    do_action(
+        &Target {
+            bus,
+            handle: &handle,
+            element: owner,
+            deadline,
+        },
+        &names,
+        click_verbs(role),
+    )
+}
+
+/// What the owner's reply settles. A reply of false delivered nothing, so the
+/// popup is not read and cannot turn that reply into a delivery.
+fn popup_outcome(reply: WriteReply, read_closed: impl FnOnce() -> Option<bool>) -> DeliveryOutcome {
+    match reply {
+        WriteReply::Absent => DeliveryOutcome::NotDelivered,
+        WriteReply::Done => DeliveryOutcome::observed(read_closed()),
+    }
+}
+
+/// The answer for a refused Escape: the popup attempt's own result, or its own
+/// error, which already says whether that attempt may have landed. The refusal
+/// stands only when the target window shows no open popup owner.
+pub(super) fn popup_answer(
+    refusal: AdapterError,
+    popup: Result<Option<ActionResult>, AdapterError>,
+) -> Result<ActionResult, AdapterError> {
+    match popup {
+        Ok(Some(settled)) => Ok(settled),
+        Ok(None) => Err(refusal),
+        Err(attempt) => Err(attempt),
+    }
 }
 
 /// The refused Escape of a background application, answered by closing the
-/// open popup its target window shows. `None` leaves the refusal as it was.
+/// open popup its target window shows. `Ok(None)` leaves the refusal as it was;
+/// every other result, the popup attempt's own failure included, is the answer.
 pub(super) fn close_open_popup(
     bus: &SharedBus,
     pid: u32,
@@ -189,16 +213,15 @@ pub(super) fn close_open_popup(
         return Ok(None);
     };
     let run = || {
-        if !press_owner(bus, &owner, owner_role, deadline)? {
-            return Ok(DeliveryOutcome::NotDelivered);
-        }
-        let closed = deadline.poll_until(
-            CLOSE_SETTLE,
-            CLOSE_STEP,
-            || still_open(bus, &owner, deadline).map(|open| !open),
-            |closed| *closed == Some(true),
-        );
-        Ok(DeliveryOutcome::observed(closed))
+        let reply = press_owner(bus, &owner, owner_role, deadline)?;
+        Ok(popup_outcome(reply, || {
+            deadline.poll_until(
+                CLOSE_SETTLE,
+                CLOSE_STEP,
+                || still_open(bus, &owner, deadline).map(|open| !open),
+                |closed| *closed == Some(true),
+            )
+        }))
     };
     let mut rungs = [ChainRung {
         label: CLOSE_LABEL,
