@@ -9,11 +9,10 @@
 
 use std::time::Duration;
 
-use agent_desktop_core::{
-    AdapterError, Deadline, DeliveryOutcome, DeliverySemantics, ErrorCode, KeyCombo,
-};
+use agent_desktop_core::{AdapterError, Deadline, DeliveryOutcome, KeyCombo};
 
 use crate::actions::cell_read_back::{ReadBack, classify as classify_read_back};
+use crate::actions::cell_write_failure::{cell_took_nothing, left_open, nothing_typed};
 use crate::actions::chain::press_selection;
 use crate::actions::{DeliveryTracker, ax_helpers, background_keyboard};
 use crate::tree::AXElement;
@@ -24,12 +23,11 @@ pub(crate) const REPLACE_LABEL: &str = "PIDTargetedReplaceText";
 pub(crate) const WRITE_LABEL: &str = "CellEditorWrite";
 
 const MAX_PRESSES: usize = 2;
-const LEFT_OPEN_SUGGESTION: &str = "Commit the open edit with a key press scoped to the application, such as press return --app <app>, then read the cell to verify.";
-const NO_EDITOR_SUGGESTION: &str = "Take a fresh snapshot before another write: the press can select the cell or open another surface.";
 
 const CELL_ROLE: &str = "cell";
 const SETTLE: Duration = Duration::from_millis(600);
 const SETTLE_POLL: Duration = Duration::from_millis(10);
+const READ_BACK_SETTLE: Duration = Duration::from_millis(2000);
 
 /// What replacing an editor's text takes, given the text it holds now.
 #[derive(Debug, PartialEq, Eq)]
@@ -230,7 +228,7 @@ fn write_steps<E: CellEdit>(
     *sent = true;
     Ok(match edit.read_back(value)? {
         ReadBack::Matches => DeliveryOutcome::from_delivery(true, true),
-        ReadBack::Differs => DeliveryOutcome::from_delivery(true, false),
+        ReadBack::Differs | ReadBack::Unknown => DeliveryOutcome::from_delivery(true, false),
         ReadBack::Empty => return cell_took_nothing(),
     })
 }
@@ -292,59 +290,32 @@ impl CellEdit for LiveCell<'_> {
     }
 
     fn read_back(&mut self, value: &str) -> Result<ReadBack, AdapterError> {
-        let read = || {
-            classify_read_back(
-                crate::tree::copy_value_typed(self.cell, self.deadline).as_deref(),
-                value,
-            )
+        let mut read = || {
+            let mut usage = crate::tree::observation_usage::ObservationUsage::new(
+                agent_desktop_core::ObservationBudget::default(),
+            );
+            let text = match crate::tree::element_name::resolve_element_name(
+                self.cell,
+                self.deadline,
+                &mut usage,
+            ) {
+                Ok(text) => text,
+                Err(_) => return ReadBack::Unknown,
+            };
+            if text.as_deref() == Some(value) {
+                return ReadBack::Matches;
+            }
+            if editor_of(self.cell, self.deadline).ok().flatten().is_some() {
+                return ReadBack::Empty;
+            }
+            classify_read_back(text.as_deref(), value)
         };
         Ok(self
             .deadline
-            .poll_until(SETTLE, SETTLE_POLL, read, |read| *read != ReadBack::Empty))
+            .poll_until(READ_BACK_SETTLE, SETTLE_POLL, &mut read, |read| {
+                matches!(read, ReadBack::Matches | ReadBack::Unknown)
+            }))
     }
-}
-
-/// The end of a write whose editor lost the keyboard focus before the commit,
-/// as it does when the application moves the edit into an editor of its own.
-/// Return is not sent to another element. Text that was sent stays on record
-/// as a failure, so the caller does not read it as a committed write.
-pub(crate) fn left_open(sent: bool) -> Result<DeliveryOutcome, AdapterError> {
-    if !sent {
-        return Ok(DeliveryOutcome::NotDelivered);
-    }
-    Err(AdapterError::new(
-        ErrorCode::ActionFailed,
-        "The text was typed, and the application moved the edit out of the cell's editor before it was committed",
-    )
-    .with_suggestion(LEFT_OPEN_SUGGESTION)
-    .with_disposition(DeliverySemantics::delivered_unverified()))
-}
-
-/// The end of a write that typed nothing. A press that was sent stays on
-/// record as a failure, so the caller does not read it as a write.
-pub(crate) fn nothing_typed(pressed: bool) -> Result<DeliveryOutcome, AdapterError> {
-    if !pressed {
-        return Ok(DeliveryOutcome::NotDelivered);
-    }
-    Err(AdapterError::new(
-        ErrorCode::ActionFailed,
-        "The cell was pressed and nothing was typed: it gave no text editor, or the editor's text could not be read or selected",
-    )
-    .with_suggestion(NO_EDITOR_SUGGESTION)
-    .with_disposition(DeliverySemantics::delivered_unverified()))
-}
-
-/// The end of a write whose cell still shows nothing after the commit: the
-/// application took the keys and dropped them instead of the text.
-pub(crate) fn cell_took_nothing() -> Result<DeliveryOutcome, AdapterError> {
-    Err(AdapterError::new(
-        ErrorCode::ActionFailed,
-        "The text was typed and committed, but the cell still shows nothing",
-    )
-    .with_suggestion(
-        "Bring the application to the front and retry, or type into the cell with --headed only if the user explicitly asked for that, then read the cell to verify the write.",
-    )
-    .with_disposition(DeliverySemantics::delivered_unverified()))
 }
 
 /// The text element inside `cell` that holds the application's keyboard focus.

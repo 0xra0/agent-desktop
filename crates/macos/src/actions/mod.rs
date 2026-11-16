@@ -8,6 +8,7 @@ pub(crate) mod background_effect;
 mod background_keyboard;
 mod cell_editor;
 pub(crate) mod cell_read_back;
+pub(crate) mod cell_write_failure;
 pub(crate) mod chain;
 pub(crate) mod delivery_tracker;
 pub(crate) mod dispatch;

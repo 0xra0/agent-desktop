@@ -6,11 +6,12 @@ pub(crate) enum ReadBack {
     Matches,
     Empty,
     Differs,
+    Unknown,
 }
 
-/// Judges the cell's value after a commit. A cell that publishes nothing while
-/// a value was written took no text; a cell that shows something else may hold
-/// a formatted form of it.
+/// Judges the cell's value after a commit. `current` is `None` only when the
+/// application was read and published no value; a read that failed is
+/// `Unknown` and never an empty cell.
 pub(crate) fn classify(current: Option<&str>, wanted: &str) -> ReadBack {
     match current {
         Some(held) if held == wanted => ReadBack::Matches,

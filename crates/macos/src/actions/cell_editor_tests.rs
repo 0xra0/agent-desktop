@@ -1,8 +1,6 @@
-use super::{
-    CellEdit, CellTarget, Replacement, cell_target, left_open, nothing_typed, replacement,
-    write_through,
-};
+use super::{CellEdit, CellTarget, Replacement, cell_target, replacement, write_through};
 use crate::actions::cell_read_back::ReadBack;
+use crate::actions::cell_write_failure::{left_open, nothing_typed};
 use agent_desktop_core::{AdapterError, DeliveryOutcome, DeliverySemantics, ErrorCode};
 
 #[test]
@@ -174,6 +172,17 @@ fn a_cell_that_stays_empty_after_the_commit_fails_as_delivered() {
 fn a_cell_that_shows_another_value_stays_unverified() {
     let mut cell = ScriptedCell {
         read_back: ReadBack::Differs,
+        ..scripted()
+    };
+
+    assert_eq!(write_through(&mut cell, "42").unwrap(), unverified());
+    assert_eq!(cell.calls.last(), Some(&"read_back"));
+}
+
+#[test]
+fn an_unreadable_cell_stays_unverified_and_never_fails() {
+    let mut cell = ScriptedCell {
+        read_back: ReadBack::Unknown,
         ..scripted()
     };
 
