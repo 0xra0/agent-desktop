@@ -46,9 +46,13 @@ may report `unknown` when consent would require a prompt.
   cancel action when no focused element takes Escape, and reads that it closed. A
   popover can appear a moment after the click that opens it: read it with
   `snapshot --app <app> --surface popover`.
+- `list-surfaces` lists the sheets, dialogs and popovers of every window, not only
+  the focused one. A system service panel, such as AirDrop from a share, is a dialog.
 - Headless menu-opening and dialog-opening actions can refuse before delivery.
   A label ending in an ellipsis predicts a dialog; it does not prove one exists.
-  Stop on a headed-only refusal rather than changing mode.
+  A click on a button inside a popover refuses with `kind: popover_command`: a
+  share item starts a service whose window takes the front. Stop on a headed-only
+  refusal rather than changing mode.
 - A file-name text field is not a file-system rename interface. Value-write
   actions refuse it because a changed field could falsely imply a renamed file.
 - Chromium accessibility is enabled by the adapter when needed. A sparse or

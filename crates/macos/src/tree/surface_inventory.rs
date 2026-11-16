@@ -5,31 +5,48 @@ use agent_desktop_core::{AdapterError, Deadline, SurfaceInfo};
 /// more is a content container: a list, a table or a column of a browser.
 pub(crate) const ANCHOR_CHILD_LIMIT: usize = 16;
 
+/// The surfaces of every window of the process, and its open menus.
 pub(crate) fn list_surfaces_for_process(
     identity: crate::system::process::process_identity::ProcessIdentity,
     deadline: Deadline,
 ) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    let app = element_for_pid(identity.pid());
     super::app_menu::observe(identity, deadline, || {
-        list_surfaces_once(identity.pid(), deadline)
+        let popovers = crate::system::window::popup_window::shows_popup_window(identity.pid());
+        list_surfaces_once(identity.pid(), deadline, popovers, || {
+            Ok(read_array(&app, "AXWindows", deadline)?.unwrap_or_default())
+        })
     })
 }
 
-fn list_surfaces_once(pid: i32, deadline: Deadline) -> Result<Vec<SurfaceInfo>, AdapterError> {
-    let app = element_for_pid(pid);
+/// The surfaces of one window, and the open menus of its process: what an
+/// action on an element of that window can have raised. A popover that opens
+/// later is found by `wait --surface`, so the action pays no popover search.
+pub(crate) fn list_surfaces_in_window(
+    identity: crate::system::process::process_identity::ProcessIdentity,
+    window: &AXElement,
+    deadline: Deadline,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
+    super::app_menu::observe(identity, deadline, || {
+        list_surfaces_once(identity.pid(), deadline, false, || Ok(vec![window.clone()]))
+    })
+}
+
+fn list_surfaces_once(
+    pid: i32,
+    deadline: Deadline,
+    popovers: bool,
+    windows: impl FnOnce() -> Result<Vec<AXElement>, AdapterError>,
+) -> Result<Vec<SurfaceInfo>, AdapterError> {
     list_surfaces_with(
         deadline,
         || {
             let mut surfaces = Vec::new();
-            let popup_open = crate::system::window::popup_window::shows_popup_window(pid);
-            for (index, window) in read_array(&app, "AXWindows", deadline)?
-                .unwrap_or_default()
-                .iter()
-                .enumerate()
-            {
+            for (index, window) in windows()?.iter().enumerate() {
                 let id = format!("windows/{index}");
                 let listed = surfaces.len();
                 collect_window_surfaces(window, &id, deadline, &mut surfaces)?;
-                if popup_open && !surfaces[listed..].iter().any(|s| s.kind == "popover") {
+                if popovers && !surfaces[listed..].iter().any(|s| s.kind == "popover") {
                     push_anchored_popover(window, &id, deadline, &mut surfaces)?;
                 }
             }

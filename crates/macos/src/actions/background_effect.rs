@@ -5,7 +5,7 @@
 //! Writing `AXFocused` moves focus only inside the target application
 //! (M-W0-14), so it has no effect here and headless `focus` is delivered.
 //!
-//! The reasons are `shows_menu` and `opens_dialog`. A menu overlay is drawn
+//! The reasons are `shows_menu`, `opens_dialog` and `popover_command`. A menu overlay is drawn
 //! over the user's window, takes their focused element, and AppKit orders the
 //! owning window front; no AX path selects a popup item or opens a context
 //! menu without it. A dialog is predicted by an owner-judgment rule: a label
@@ -13,7 +13,9 @@
 //! is trimmed, is the convention shared by GTK, Qt and macOS applications for
 //! a control that opens a dialog. It is a predictor, not a proof: no
 //! accessibility property says that a control opens a window. A label that
-//! cannot be read counts as one.
+//! cannot be read counts as one. A button inside a popover runs a command
+//! that can start a service whose window the platform brings to the front (a
+//! share item opens the AirDrop panel), and nothing in the tree tells which.
 
 use agent_desktop_core::{Action, AdapterError, Deadline, Effect, InteractionPolicy};
 
@@ -23,6 +25,8 @@ const MENU_OWNER_ROLES: &[&str] = &["AXPopUpButton", "AXMenuButton", "AXComboBox
 const ELLIPSES: &[&str] = &["\u{2026}", "..."];
 const SHOWS_MENU: &str = "shows_menu";
 const OPENS_DIALOG: &str = "opens_dialog";
+const POPOVER_COMMAND: &str = "popover_command";
+const POPOVER_ANCESTOR_WALK: usize = 8;
 
 /// Refuses `operation` with `POLICY_DENIED` when `policy` does not permit
 /// `effect`, and reports `kind` as the reason the action takes the foreground.
@@ -81,6 +85,7 @@ pub(crate) fn press_disturbs(element: &AXElement, deadline: Deadline) -> bool {
 struct PressTarget {
     role: Option<String>,
     labels: Vec<String>,
+    in_popover: bool,
 }
 
 fn press_effect(action: &Action, target: &Option<PressTarget>) -> Option<&'static str> {
@@ -93,6 +98,9 @@ fn press_effect(action: &Action, target: &Option<PressTarget>) -> Option<&'stati
         .is_some_and(|role| MENU_OWNER_ROLES.contains(&role));
     if menu_owner && matches!(action, Action::Click | Action::Expand) {
         return Some(SHOWS_MENU);
+    }
+    if target.in_popover && matches!(action, Action::Click) {
+        return Some(POPOVER_COMMAND);
     }
     let opens_dialog = target.labels.iter().any(|label| {
         let label = label.trim_end();
@@ -125,7 +133,12 @@ fn read_target(element: &AXElement, deadline: Deadline) -> Option<PressTarget> {
         return None;
     }
     let names = read.attrs.name_evidence;
+    let in_popover = match read.attrs.role.as_deref() {
+        Some("AXButton") => inside_popover(element, deadline)?,
+        _ => false,
+    };
     Some(PressTarget {
+        in_popover,
         role: read.attrs.role,
         labels: [
             names.native_title,
@@ -137,6 +150,28 @@ fn read_target(element: &AXElement, deadline: Deadline) -> Option<PressTarget> {
         .flatten()
         .collect(),
     })
+}
+
+/// Whether a popover holds `element`, from a bounded walk up its ancestors.
+/// None when an ancestor cannot be read.
+fn inside_popover(element: &AXElement, deadline: Deadline) -> Option<bool> {
+    let mut current = element.clone();
+    for _ in 0..POPOVER_ANCESTOR_WALK {
+        let Some(parent) =
+            crate::tree::surface_read::element(&current, "AXParent", deadline).ok()?
+        else {
+            return Some(false);
+        };
+        match crate::tree::surface_read::string(&parent, "AXRole", deadline)
+            .ok()?
+            .as_deref()
+        {
+            Some("AXPopover") => return Some(true),
+            Some("AXWindow" | "AXApplication") => return Some(false),
+            _ => current = parent,
+        }
+    }
+    Some(false)
 }
 
 #[cfg(test)]
