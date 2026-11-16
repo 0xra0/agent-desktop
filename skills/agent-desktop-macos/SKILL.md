@@ -40,6 +40,10 @@ may report `unknown` when consent would require a prompt.
 - `menu` and `menubar` observations are application-owned and can omit `data.window`.
   An app without an ordinary window may still expose process-owned surfaces.
   Inspect `supported_surfaces` rather than assuming every surface exists.
+- `agent-desktop press escape --app <app>` closes an open menu or popover with its
+  cancel action when no focused element takes Escape, and reads that it closed. A
+  popover can appear a moment after the click that opens it: read it with
+  `snapshot --app <app> --surface popover`.
 - Headless menu-opening and dialog-opening actions can refuse before delivery.
   A label ending in an ellipsis predicts a dialog; it does not prove one exists.
   Stop on a headed-only refusal rather than changing mode.

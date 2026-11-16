@@ -234,7 +234,7 @@ fn surface_node_limit_is_explicitly_incomplete() {
 fn menus_beyond_eight_wrappers_remain_discoverable() {
     let deadline = Deadline::after(5000).unwrap();
     for target_depth in [9, 11, 30] {
-        let found = find_menu_descendant_with(0, "app".into(), deadline, |depth, _| {
+        let found = find_surface_descendant_with(0, "app".into(), deadline, |depth, _| {
             Ok((*depth == target_depth, vec![depth + 1]))
         })
         .unwrap();
@@ -245,7 +245,7 @@ fn menus_beyond_eight_wrappers_remain_discoverable() {
 #[test]
 fn cyclic_menu_search_remains_bounded_and_explicitly_incomplete() {
     let mut reads = 0;
-    let error = find_menu_descendant_with(
+    let error = find_surface_descendant_with(
         0,
         "app".into(),
         Deadline::after(5000).unwrap(),
@@ -261,16 +261,18 @@ fn cyclic_menu_search_remains_bounded_and_explicitly_incomplete() {
 
 #[test]
 fn expired_menu_search_never_reads_a_node() {
-    let result =
-        find_menu_descendant_with::<()>((), "app".into(), Deadline::after(0).unwrap(), |_, _| {
-            panic!("expired search must not call AX")
-        });
+    let result = find_surface_descendant_with::<()>(
+        (),
+        "app".into(),
+        Deadline::after(0).unwrap(),
+        |_, _| panic!("expired search must not call AX"),
+    );
     assert_eq!(result.unwrap_err().code, ErrorCode::Timeout);
 }
 
 #[test]
 fn incomplete_content_branch_does_not_hide_a_menu_in_a_sibling() {
-    let result = find_menu_descendant_with(
+    let result = find_surface_descendant_with(
         0,
         "app".into(),
         Deadline::after(5000).unwrap(),
@@ -286,7 +288,7 @@ fn incomplete_content_branch_does_not_hide_a_menu_in_a_sibling() {
 
 #[test]
 fn an_incomplete_branch_cannot_prove_menu_absence() {
-    let result = find_menu_descendant_with(
+    let result = find_surface_descendant_with(
         0,
         "app".into(),
         Deadline::after(5000).unwrap(),
@@ -302,13 +304,13 @@ fn an_incomplete_branch_cannot_prove_menu_absence() {
 #[test]
 fn shallow_menu_precedes_unbounded_content_and_permission_errors_stay_terminal() {
     let deadline = Deadline::after(5000).unwrap();
-    let found = find_menu_descendant_with(0, "app".into(), deadline, |node, _| match node {
+    let found = find_surface_descendant_with(0, "app".into(), deadline, |node, _| match node {
         0 => Ok((false, vec![1, 2])),
         1 => Ok((false, vec![1])),
         _ => Ok((true, vec![])),
     });
     assert_eq!(found.unwrap(), Some(("app/children/1".into(), 2)));
-    let denied = find_menu_descendant_with(0, "app".into(), deadline, |node, _| match node {
+    let denied = find_surface_descendant_with(0, "app".into(), deadline, |node, _| match node {
         0 => Ok((false, vec![1, 2])),
         1 => Err(AdapterError::new(ErrorCode::PermDenied, "denied")),
         _ => panic!("permission failure must stop all further AX reads"),
@@ -359,7 +361,7 @@ fn the_items_of_a_content_container_are_checked_but_not_opened() {
     let deadline = Deadline::after(5000).unwrap();
     let wide = super::super::surface_inventory::ANCHOR_CHILD_LIMIT + 1;
     let mut opened = Vec::new();
-    let found = find_menu_descendant_with(0_usize, "app".into(), deadline, |node, expand| {
+    let found = find_surface_descendant_with(0_usize, "app".into(), deadline, |node, expand| {
         if expand {
             opened.push(*node);
         }
@@ -382,7 +384,7 @@ fn the_items_of_a_content_container_are_checked_but_not_opened() {
 fn a_menu_among_the_items_of_a_content_container_is_still_found() {
     let deadline = Deadline::after(5000).unwrap();
     let wide = super::super::surface_inventory::ANCHOR_CHILD_LIMIT + 1;
-    let found = find_menu_descendant_with(0_usize, "app".into(), deadline, |node, _| {
+    let found = find_surface_descendant_with(0_usize, "app".into(), deadline, |node, _| {
         Ok(match *node {
             0 => (false, (100..100 + wide).collect()),
             node => (node == 100 + wide - 1, vec![]),
