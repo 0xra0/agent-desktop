@@ -75,7 +75,7 @@ pub(crate) fn surface_in_window(
 /// search reads was read: a search cut at its element limit fails as not found
 /// and says it is incomplete.
 #[cfg(target_os = "macos")]
-fn popover_in_window(
+pub(super) fn popover_in_window(
     window: &AXElement,
     deadline: Deadline,
 ) -> Result<Option<AXElement>, AdapterError> {
@@ -196,7 +196,7 @@ pub(super) fn is_alert(element: &AXElement, deadline: Deadline) -> Result<bool, 
     Ok(matches!(role.as_deref(), Some("AXSheet"))
         || matches!(
             subrole.as_deref(),
-            Some("AXDialog") | Some("AXAlert") | Some("AXSheet")
+            Some("AXDialog" | "AXSystemDialog" | "AXAlert" | "AXSheet")
         ))
 }
 

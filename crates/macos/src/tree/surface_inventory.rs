@@ -20,8 +20,18 @@ fn list_surfaces_once(pid: i32, deadline: Deadline) -> Result<Vec<SurfaceInfo>, 
         deadline,
         || {
             let mut surfaces = Vec::new();
-            if let Some(window) = read_element(&app, "AXFocusedWindow", deadline)? {
-                collect_window_surfaces(&window, "focused-window", deadline, &mut surfaces)?;
+            let popup_open = crate::system::window::popup_window::shows_popup_window(pid);
+            for (index, window) in read_array(&app, "AXWindows", deadline)?
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
+            {
+                let id = format!("windows/{index}");
+                let listed = surfaces.len();
+                collect_window_surfaces(window, &id, deadline, &mut surfaces)?;
+                if popup_open && !surfaces[listed..].iter().any(|s| s.kind == "popover") {
+                    push_anchored_popover(window, &id, deadline, &mut surfaces)?;
+                }
             }
             Ok(surfaces)
         },
@@ -33,6 +43,33 @@ fn list_surfaces_once(pid: i32, deadline: Deadline) -> Result<Vec<SurfaceInfo>, 
             Ok(surfaces)
         },
     )
+}
+
+/// A headless target window is rarely the focused one, and a popover hangs
+/// below the control that raised it, so while the application shows a pop-up
+/// window every window gets the bounded popover search. A window whose search
+/// reached its element limit is left out.
+fn push_anchored_popover(
+    window: &AXElement,
+    window_id: &str,
+    deadline: Deadline,
+    surfaces: &mut Vec<SurfaceInfo>,
+) -> Result<(), AdapterError> {
+    let popover = match super::surfaces::popover_in_window(window, deadline) {
+        Ok(popover) => popover,
+        Err(error) if error.code == agent_desktop_core::ErrorCode::ElementNotFound => None,
+        Err(error) => return Err(error),
+    };
+    if let Some(popover) = popover {
+        surfaces.push(SurfaceInfo {
+            id: format!("{window_id}/popover"),
+            kind: "popover".into(),
+            title: read_title(&popover, deadline)?,
+            item_count: None,
+            unclassified: Vec::new(),
+        });
+    }
+    Ok(())
 }
 
 fn list_surfaces_with(
@@ -150,17 +187,24 @@ fn surface_kind(
     deadline: Deadline,
 ) -> Result<Option<&'static str>, AdapterError> {
     let role = read_string(element, "AXRole", deadline)?;
-    let subrole = read_string(element, "AXSubrole", deadline)?;
-    Ok(match subrole.as_deref() {
-        Some("AXSheet") => Some("sheet"),
-        Some("AXPopover") => Some("popover"),
-        Some("AXDialog") | Some("AXAlert") => Some("alert"),
-        _ => match role.as_deref() {
-            Some("AXSheet") => Some("sheet"),
-            Some("AXPopover") => Some("popover"),
-            _ => None,
-        },
-    })
+    let subrole = match role.as_deref() {
+        Some("AXWindow") => read_string(element, "AXSubrole", deadline)?,
+        _ => None,
+    };
+    Ok(kind_of(role.as_deref(), subrole.as_deref()))
+}
+
+/// A system dialog is the window a system service opens for an application,
+/// such as the AirDrop panel of a share. A dialog subrole belongs to a window;
+/// a sheet and a popover have their own role, so only a window's subrole is
+/// read.
+fn kind_of(role: Option<&str>, subrole: Option<&str>) -> Option<&'static str> {
+    match (subrole, role) {
+        (Some("AXSheet"), _) | (_, Some("AXSheet")) => Some("sheet"),
+        (Some("AXPopover"), _) | (_, Some("AXPopover")) => Some("popover"),
+        (Some("AXDialog" | "AXSystemDialog" | "AXAlert"), _) => Some("alert"),
+        _ => None,
+    }
 }
 
 fn read_title(element: &AXElement, deadline: Deadline) -> Result<Option<String>, AdapterError> {
@@ -184,14 +228,6 @@ fn read_array(
     deadline: Deadline,
 ) -> Result<Option<Vec<AXElement>>, AdapterError> {
     crate::tree::surface_read::elements(element, attribute, deadline).map(Some)
-}
-
-fn read_element(
-    element: &AXElement,
-    attribute: &str,
-    deadline: Deadline,
-) -> Result<Option<AXElement>, AdapterError> {
-    crate::tree::surface_read::element(element, attribute, deadline)
 }
 
 fn ensure_before_deadline(deadline: Deadline) -> Result<(), AdapterError> {

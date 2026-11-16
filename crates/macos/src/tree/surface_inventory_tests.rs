@@ -104,3 +104,20 @@ fn a_failed_inventory_does_not_hide_the_surface_below_the_target() {
         ["menu", "target"]
     );
 }
+
+#[test]
+fn a_system_dialog_is_listed_as_an_alert_like_a_dialog() {
+    assert_eq!(
+        super::kind_of(Some("AXWindow"), Some("AXSystemDialog")),
+        Some("alert")
+    );
+    assert_eq!(
+        super::kind_of(Some("AXWindow"), Some("AXDialog")),
+        Some("alert")
+    );
+    assert_eq!(super::kind_of(Some("AXSheet"), None), Some("sheet"));
+    assert_eq!(
+        super::kind_of(Some("AXWindow"), Some("AXStandardWindow")),
+        None
+    );
+}
