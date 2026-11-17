@@ -23,11 +23,13 @@ mod imp {
         surface_read::string(element, "AXRole", deadline)?;
         let app = crate::system::app::app_ops::pid_from_element(element, deadline)
             .map(crate::tree::element_for_pid);
-        let focused = app.and_then(|app| {
-            attributes::copy_element_attr_result(&app, "AXFocusedUIElement", deadline)
-                .ok()
-                .flatten()
-        });
+        let focus = match app
+            .map(|app| attributes::copy_element_attr_result(&app, "AXFocusedUIElement", deadline))
+        {
+            Some(Ok(Some(focused))) => focus_of(&focused, element, deadline),
+            Some(Ok(None)) => FocusWitness::nothing_focused(),
+            Some(Err(_)) | None => FocusWitness::default(),
+        };
         Ok(EffectWitness {
             target: TargetWitness {
                 selected: attributes::copy_bool_attr_result(element, "AXSelected", deadline)
@@ -36,7 +38,7 @@ mod imp {
                 value: crate::tree::copy_value_typed(element, deadline),
                 surfaces: surfaces_below(element, deadline),
             },
-            focus: focus_of(focused.as_ref(), element, deadline),
+            focus,
             window: WindowWitness::default(),
         })
     }
@@ -71,14 +73,7 @@ mod imp {
         u32::try_from(popovers.count()).ok()
     }
 
-    fn focus_of(
-        focused: Option<&AXElement>,
-        element: &AXElement,
-        deadline: Deadline,
-    ) -> FocusWitness {
-        let Some(focused) = focused else {
-            return FocusWitness::default();
-        };
+    fn focus_of(focused: &AXElement, element: &AXElement, deadline: Deadline) -> FocusWitness {
         FocusWitness {
             element: crate::tree::resolve::retained::capture(focused)
                 .ok()

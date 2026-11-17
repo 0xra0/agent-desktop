@@ -12,3 +12,17 @@ pub struct FocusWitness {
     pub in_target_window: Option<bool>,
     pub value: Option<String>,
 }
+
+impl FocusWitness {
+    /// The application answered that nothing has focus. Unlike `default()`,
+    /// which is a focus that was not read, this is a read, so focus that
+    /// arrives later counts as moved.
+    pub fn nothing_focused() -> Self {
+        Self {
+            element: Some(String::new()),
+            inside_target: Some(false),
+            in_target_window: Some(false),
+            value: None,
+        }
+    }
+}

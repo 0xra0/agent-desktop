@@ -1,4 +1,5 @@
 use super::{EffectWitness, verdict};
+use crate::actions::focus_witness::FocusWitness;
 use crate::actions::{observed_effect::ObservedEffect, witness_change::WitnessChange};
 
 fn read() -> EffectWitness {
@@ -103,4 +104,18 @@ fn a_field_read_only_once_and_a_state_that_goes_away_are_no_evidence() {
     gone.target.selected = Some(false);
     gone.target.surfaces = Some(0);
     assert!(gone.changes_since(&selected).is_empty());
+}
+
+#[test]
+fn focus_that_arrives_in_the_target_from_no_focus_is_a_change() {
+    let mut before = read();
+    before.focus = FocusWitness::nothing_focused();
+    let mut now = read();
+    now.focus.element = Some("target".into());
+    now.focus.inside_target = Some(true);
+
+    assert!(
+        now.changes_since(&before)
+            .contains(&WitnessChange::FocusIntoTarget)
+    );
 }
