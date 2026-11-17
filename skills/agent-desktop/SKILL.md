@@ -70,8 +70,8 @@ agent-desktop get '@s8f3k2p9:e4' --property value
 agent-desktop close-app "<app>"                # a save prompt keeps the app open; see --force below
 ```
 
-If an action reports `data.surfaces`, inspect the overlay before acting on the
-window behind it. A menu, sheet, or alert needs its own surface observation.
+If an action reports `data.surfaces`, inspect the overlay before acting on the window behind it. A menu, sheet, or alert needs its own surface observation.
+`data.details.surfaces: "not_read"` means that read failed, so run `list-surfaces` before assuming no overlay opened.
 Attached selector waits usually observe the parent window, not a separate popup.
 A gone match cannot prove that popup closed, and matching text elsewhere can satisfy an appearance wait.
 Use `launch` with a program name or path accepted by the platform. A running
