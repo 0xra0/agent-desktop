@@ -6,6 +6,7 @@ mod imp {
     };
     use accessibility_sys::{
         AXUIElementCreateSystemWide, kAXApplicationRole, kAXErrorSuccess, kAXRoleAttribute,
+        kAXSubroleAttribute,
     };
     use agent_desktop_core::{
         AdapterError, Point, Rect, adapter::hit_test::HitTestResult,
@@ -275,7 +276,20 @@ mod imp {
                 };
                 visible = intersection;
             }
-            if role.as_deref().is_some_and(owns_surface) {
+            let subrole = match read_complete_text(
+                &current,
+                kAXSubroleAttribute,
+                deadline,
+                &mut usage,
+                "hit_test.clip_subrole",
+            ) {
+                Ok(subrole) => subrole,
+                Err(_) => return Ok(None),
+            };
+            if role
+                .as_deref()
+                .is_some_and(|role| owns_surface(role, subrole.as_deref()))
+            {
                 return Ok(Some(visible));
             }
             current = match crate::tree::resolve::resolve_ax_read::read_element(
