@@ -52,7 +52,7 @@ fn is_local_ref(ref_id: &str) -> bool {
     })
 }
 
-const REF_SUGGESTION: &str = "Use the snapshot-qualified ref that snapshot prints, for example @s8f3k2p9:e1. A bare @eN ref is not accepted. Pass ref_id as printed: it already holds the snapshot id. In zsh write \"${SID}:e1\", because an unbraced $SID:e1 reads :e as a modifier.";
+const REF_SUGGESTION: &str = "Use the snapshot-qualified ref that snapshot prints, for example @s8f3k2p9:e1. A bare @eN ref is not accepted. Pass ref_id as printed: it already holds the snapshot id. In zsh write \"@${SID}:e1\", because an unbraced @$SID:e1 reads :e as a modifier.";
 
 fn invalid_ref(ref_id: &str) -> AppError {
     AppError::invalid_input_with_suggestion(
