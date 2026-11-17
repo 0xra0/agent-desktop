@@ -26,7 +26,6 @@ const ELLIPSES: &[&str] = &["\u{2026}", "..."];
 const SHOWS_MENU: &str = "shows_menu";
 const OPENS_DIALOG: &str = "opens_dialog";
 const POPOVER_COMMAND: &str = "popover_command";
-const POPOVER_ANCESTOR_WALK: usize = 8;
 
 /// Refuses `operation` with `POLICY_DENIED` when `policy` does not permit
 /// `effect`, and reports `kind` as the reason the action takes the foreground.
@@ -152,11 +151,13 @@ fn read_target(element: &AXElement, deadline: Deadline) -> Option<PressTarget> {
     })
 }
 
-/// Whether a popover holds `element`, from a bounded walk up its ancestors.
-/// None when an ancestor cannot be read.
+/// Whether a popover holds `element`, from a walk up its ancestors to its
+/// window or application. None when an ancestor cannot be read, which is also
+/// how the walk ends once the deadline runs out, so an unknown answer is never
+/// read as "no".
 fn inside_popover(element: &AXElement, deadline: Deadline) -> Option<bool> {
     let mut current = element.clone();
-    for _ in 0..POPOVER_ANCESTOR_WALK {
+    loop {
         let Some(parent) =
             crate::tree::surface_read::element(&current, "AXParent", deadline).ok()?
         else {
@@ -171,7 +172,6 @@ fn inside_popover(element: &AXElement, deadline: Deadline) -> Option<bool> {
             _ => current = parent,
         }
     }
-    Some(false)
 }
 
 #[cfg(test)]
