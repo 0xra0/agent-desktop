@@ -1,9 +1,11 @@
-use super::stub::{Stub, app, args, build, golden, mode, run, script, selector, signals, stable};
+use super::stub::{
+    Stub, app, args, build, golden, mode, payload, run, script, selector, signals, stable,
+};
 use super::stub::{window, with_buttons};
 use crate::commands::wait::execute;
 use crate::commands::wait_surface::SurfaceWait;
 use crate::refs::refs_test_support::HomeGuard;
-use crate::{CommandContext, NotificationInfo, SignalBaseline};
+use crate::{CommandContext, NotificationInfo, SignalBaseline, SurfaceInfo};
 use serde_json::{Value, json};
 
 #[test]
@@ -106,6 +108,72 @@ fn event_wait_reports_the_window_and_app_events() {
         data,
         include_str!("../../../../../../tests/fixtures/contract/waits-event.json")
     );
+}
+
+#[test]
+fn a_surface_wait_polls_through_a_retryable_read_failure() {
+    let stub = Stub {
+        supported_surfaces: vec![crate::SnapshotSurface::Menu],
+        surfaces: script(vec![
+            Err(
+                crate::AdapterError::new(crate::ErrorCode::AppUnresponsive, "busy")
+                    .with_disposition(crate::DeliverySemantics::not_delivered()),
+            ),
+            Ok(vec![SurfaceInfo {
+                id: "menu-1".into(),
+                kind: "menu".into(),
+                title: None,
+                item_count: None,
+                unclassified: Vec::new(),
+            }]),
+        ]),
+        ..Default::default()
+    };
+
+    let data = run(
+        &stub,
+        mode!(
+            surface,
+            SurfaceWait::Open(Some(crate::SnapshotSurface::Menu))
+        ),
+        Some("TextEdit"),
+        2_000,
+    )
+    .unwrap();
+
+    assert_eq!(data["found"], json!(true));
+}
+
+#[test]
+fn a_surface_wait_that_never_read_the_surfaces_reports_the_error_and_no_observation() {
+    let retryable = || {
+        Err(
+            crate::AdapterError::new(crate::ErrorCode::AppUnresponsive, "busy")
+                .with_disposition(crate::DeliverySemantics::not_delivered()),
+        )
+    };
+    let stub = Stub {
+        supported_surfaces: vec![crate::SnapshotSurface::Menu],
+        surfaces: script(vec![retryable(); 6]),
+        ..Default::default()
+    };
+
+    let error = payload(run(
+        &stub,
+        mode!(
+            surface,
+            SurfaceWait::Open(Some(crate::SnapshotSurface::Menu))
+        ),
+        Some("TextEdit"),
+        250,
+    ));
+
+    assert_eq!(error["code"], json!("TIMEOUT"));
+    assert_eq!(
+        error["details"]["last_error"]["code"],
+        json!("APP_UNRESPONSIVE")
+    );
+    assert!(error["details"].get("last_observed").is_none());
 }
 
 #[test]

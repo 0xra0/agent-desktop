@@ -31,17 +31,23 @@ pub(crate) fn menu(mut error: AdapterError, timeout_ms: u64) -> AppError {
 pub(crate) fn surface(
     kind: &str,
     timeout_ms: u64,
-    observed: &[crate::SurfaceInfo],
+    observed: Option<&[crate::SurfaceInfo]>,
+    last_error: Option<Value>,
 ) -> Result<Value, AppError> {
     let what = if kind == "any" {
         "No surface".to_owned()
     } else {
         format!("No {kind} surface")
     };
-    timeout_err(
-        format!("{what} was open within {timeout_ms}ms"),
-        json!({ "predicate": "surface", "surface": kind, "timeout_ms": timeout_ms, "last_observed": observed }),
-    )
+    let mut details = json!({ "predicate": "surface", "surface": kind, "timeout_ms": timeout_ms });
+    let message = match observed {
+        Some(observed) => {
+            details["last_observed"] = json!(observed);
+            format!("{what} was open within {timeout_ms}ms")
+        }
+        None => format!("The surfaces could not be read within {timeout_ms}ms"),
+    };
+    timeout_err(message, with_last_error(details, last_error))
 }
 
 /// Builds the wait-loop TIMEOUT error. Every payload carries

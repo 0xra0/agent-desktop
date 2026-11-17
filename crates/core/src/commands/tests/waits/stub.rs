@@ -61,6 +61,8 @@ pub(super) fn signals(windows: Vec<WindowInfo>, apps: Vec<AppInfo>) -> SignalBas
 #[derive(Default)]
 pub(super) struct Stub {
     pub(super) windows: Mutex<VecDeque<Result<Vec<WindowInfo>, AdapterError>>>,
+    pub(super) surfaces: Mutex<VecDeque<Result<Vec<SurfaceInfo>, AdapterError>>>,
+    pub(super) supported_surfaces: Vec<SnapshotSurface>,
     pub(super) tree: Option<AccessibilityNode>,
     pub(super) notifications: Mutex<VecDeque<Result<Vec<NotificationInfo>, AdapterError>>>,
     pub(super) menu_times_out: bool,
@@ -73,7 +75,7 @@ impl ObservationOps for Stub {
         _: ProcessIdentity,
         _: Deadline,
     ) -> Result<Vec<SurfaceInfo>, AdapterError> {
-        Ok(Vec::new())
+        next(&self.surfaces).unwrap_or_else(|| Ok(Vec::new()))
     }
 
     fn observe_tree(
@@ -102,6 +104,10 @@ impl ActionOps for Stub {}
 impl InputOps for Stub {}
 
 impl SystemOps for Stub {
+    fn supported_surfaces(&self) -> Vec<SnapshotSurface> {
+        self.supported_surfaces.clone()
+    }
+
     fn wait_for_menu(
         &self,
         _: ProcessIdentity,

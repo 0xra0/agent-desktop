@@ -155,33 +155,37 @@ fn wait_for_surface(
             .find(|surface| wait_surface::is_kind(surface, kind))
             .cloned()
     };
-    let surfaces = match deadline.poll_until(
-        deadline.remaining(),
-        Duration::from_millis(100),
-        || adapter.list_surfaces(process.clone(), deadline),
-        |read| {
-            read.as_ref()
-                .map_or(true, |surfaces| open(surfaces).is_some())
-        },
-    ) {
-        Ok(surfaces) => surfaces,
-        Err(error) if deadline.is_expired() || wait_timeout::is_deadline_expired(&error) => {
-            Vec::new()
+    let mut last_observed = None;
+    let mut last_error = None;
+    loop {
+        match adapter.list_surfaces(process.clone(), deadline) {
+            Ok(surfaces) => {
+                if let Some(surface) = open(&surfaces) {
+                    return Ok(json!({
+                        "found": true,
+                        "surface": surface,
+                        "elapsed_ms": start.elapsed().as_millis(),
+                    }));
+                }
+                last_observed = Some(surfaces);
+            }
+            Err(error) if wait_timeout::is_deadline_expired(&error) => break,
+            Err(error) if error.is_retryable_poll_failure() => {
+                last_error = Some(json!({ "code": error.code.as_str(), "message": error.message }));
+            }
+            Err(error) => return Err(error.into()),
         }
-        Err(error) => return Err(error.into()),
-    };
-    match open(&surfaces) {
-        Some(surface) => Ok(json!({
-            "found": true,
-            "surface": surface,
-            "elapsed_ms": start.elapsed().as_millis(),
-        })),
-        None => wait_timeout::surface(
-            kind.map_or("any", |kind| kind.as_str()),
-            timeout_ms,
-            &surfaces,
-        ),
+        if deadline.is_expired() {
+            break;
+        }
+        deadline.pause(Duration::from_millis(100));
     }
+    wait_timeout::surface(
+        kind.map_or("any", |kind| kind.as_str()),
+        timeout_ms,
+        last_observed.as_deref(),
+        last_error,
+    )
 }
 
 fn wait_for_window(
