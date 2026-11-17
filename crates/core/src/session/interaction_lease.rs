@@ -107,10 +107,13 @@ impl InteractionLease {
 pub const INTERACTION_LEASE_PURPOSE: &str = "desktop interaction lease";
 
 /// Marks a lease acquire timeout as `not_delivered`: the lease is taken before
-/// any delivery, so a lease that was never acquired delivered nothing.
+/// any delivery, so a lease that was never acquired delivered nothing. The
+/// `lease: not_acquired` detail tells recovery that the command never ran.
 pub fn lease_not_acquired(error: AdapterError) -> AdapterError {
     if error.code == crate::ErrorCode::Timeout {
-        error.with_disposition(crate::DeliverySemantics::not_delivered())
+        error
+            .with_disposition(crate::DeliverySemantics::not_delivered())
+            .with_details(serde_json::json!({ "lease": "not_acquired" }))
     } else {
         error
     }
