@@ -101,28 +101,25 @@ pub(crate) fn identifiers(
     let complete =
         !identifiers.ax_identifier.is_unknown() && !identifiers.ax_dom_identifier.is_unknown();
     let mut values = Vec::new();
-    let grid_preferred = grid_cell.map(|identifier| {
-        values.push(identifier);
-        0
-    });
     if let Some(value) = identifiers.ax_identifier.known() {
         values.push(agent_desktop_core::ElementIdentifier {
             kind: agent_desktop_core::IdentifierKind::AxIdentifier,
             value: value.clone(),
         });
     }
-    let preferred = if let Some(value) = identifiers.ax_dom_identifier.known() {
-        let index = values.len();
+    let dom = identifiers.ax_dom_identifier.known().map(|value| {
         values.push(agent_desktop_core::ElementIdentifier {
             kind: agent_desktop_core::IdentifierKind::AxDomIdentifier,
             value: value.clone(),
         });
-        Some(index)
-    } else {
-        (!values.is_empty()).then_some(0)
-    };
-    let preferred = grid_preferred.or(preferred);
-    IdentifierEvidence::typed(values, preferred, complete)
+        values.len() - 1
+    });
+    let own = dom.or((!values.is_empty()).then_some(0));
+    let grid = grid_cell.map(|identifier| {
+        values.push(identifier);
+        values.len() - 1
+    });
+    IdentifierEvidence::typed(values, own.or(grid), complete)
 }
 
 #[cfg(test)]
@@ -148,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn grid_cell_comes_first_and_is_preferred_over_dom_identifier() {
+    fn a_cell_with_its_own_identifier_keeps_it_preferred_and_lists_its_grid_position() {
         let identifiers = crate::tree::properties::node_identifiers::NodeIdentifiers::from_fields(
             LocatorField::Known("native".into()),
             LocatorField::Known("dom".into()),
@@ -157,8 +154,11 @@ mod tests {
         let evidence = super::identifiers(&identifiers, Some(cell.clone()), true);
 
         assert_eq!(evidence.identifiers().len(), 3);
-        assert_eq!(evidence.identifiers().first(), Some(&cell));
-        assert_eq!(evidence.preferred_identifier(), Some(&cell));
+        assert_eq!(evidence.identifiers().last(), Some(&cell));
+        assert_eq!(
+            evidence.preferred_identifier().map(|i| i.value.as_str()),
+            Some("dom")
+        );
     }
 
     #[test]

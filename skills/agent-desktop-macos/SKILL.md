@@ -47,8 +47,10 @@ may report `unknown` when consent would require a prompt.
   actions refuse it because a changed field could falsely imply a renamed file.
 - Chromium accessibility is enabled by the adapter when needed. A sparse or
   incomplete read still needs another observation, not an assumption of absence.
-- A table cell carries its grid address in `native_id` (kind `grid_cell`, for example
-  `B7`). Get one cell with `find --role cell --native-id B7 --root '<table ref>'`.
+- A table cell carries its grid address in `native_id` (kind `grid_cell`, for
+  example `B7`), or its own identifier when it has one; the address finds it
+  either way.
+  Get one cell with `find --role cell --native-id B7 --root '<table ref>'`.
   A cell that spans several rows or columns has no address.
 - `set-value` and `clear` on a table cell that lists `SetValue` write its value
   directly when the cell takes one. Any other cell is written through its own
