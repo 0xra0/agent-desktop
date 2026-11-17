@@ -132,7 +132,11 @@ pub(crate) fn ancestor_viewport(
         if role == "AXApplication" {
             return Ok(within(window, &clips));
         }
-        let subrole = super::surface_read::string(&parent, "AXSubrole", instant)?;
+        let subrole = if owns_surface(&role, None) {
+            None
+        } else {
+            super::surface_read::string(&parent, "AXSubrole", instant)?
+        };
         if owns_surface(&role, subrole.as_deref()) {
             let surface = read_bounds_with_deadline(&parent, instant)?;
             return Ok(within(surface, &clips));

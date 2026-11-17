@@ -276,20 +276,22 @@ mod imp {
                 };
                 visible = intersection;
             }
-            let subrole = match read_complete_text(
-                &current,
-                kAXSubroleAttribute,
-                deadline,
-                &mut usage,
-                "hit_test.clip_subrole",
-            ) {
-                Ok(subrole) => subrole,
-                Err(_) => return Ok(None),
+            let role = role.as_deref().unwrap_or("");
+            let subrole = if owns_surface(role, None) {
+                None
+            } else {
+                match read_complete_text(
+                    &current,
+                    kAXSubroleAttribute,
+                    deadline,
+                    &mut usage,
+                    "hit_test.clip_subrole",
+                ) {
+                    Ok(subrole) => subrole,
+                    Err(_) => return Ok(None),
+                }
             };
-            if role
-                .as_deref()
-                .is_some_and(|role| owns_surface(role, subrole.as_deref()))
-            {
+            if owns_surface(role, subrole.as_deref()) {
                 return Ok(Some(visible));
             }
             current = match crate::tree::resolve::resolve_ax_read::read_element(
