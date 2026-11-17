@@ -6,7 +6,7 @@ fn an_element_shows_a_surface_only_through_its_expand_collapse_state() {
     assert_eq!(surfaces_from(Some(false), Some(1)), None);
     assert_eq!(surfaces_from(Some(true), Some(1)), Some(1));
     assert_eq!(surfaces_from(Some(true), Some(0)), Some(0));
-    assert_eq!(surfaces_from(Some(true), None), Some(0));
+    assert_eq!(surfaces_from(Some(true), None), None);
 }
 
 #[test]

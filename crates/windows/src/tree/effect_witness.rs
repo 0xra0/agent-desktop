@@ -10,10 +10,14 @@
 use std::hash::{Hash, Hasher};
 
 /// Open surfaces below an element from its `ExpandCollapse` reads: `None`
-/// without the pattern, one while expanded, none otherwise.
+/// without the pattern or when its state cannot be read, one while expanded,
+/// none otherwise.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) fn surfaces_from(available: Option<bool>, state: Option<i32>) -> Option<u32> {
-    (available == Some(true)).then(|| u32::from(state == Some(1)))
+    if available != Some(true) {
+        return None;
+    }
+    state.map(|state| u32::from(state == 1))
 }
 
 /// A sign of what the direct children of a window are: equal signs mean the
