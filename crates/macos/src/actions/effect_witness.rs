@@ -23,9 +23,9 @@ mod imp {
         surface_read::string(element, "AXRole", deadline)?;
         let app = crate::system::app::app_ops::pid_from_element(element, deadline)
             .map(crate::tree::element_for_pid);
-        let focus = match app
-            .map(|app| attributes::copy_element_attr_result(&app, "AXFocusedUIElement", deadline))
-        {
+        let focus = match app.map(|app| {
+            attributes::copy_element_attr_answered_result(&app, "AXFocusedUIElement", deadline)
+        }) {
             Some(Ok(Some(focused))) => focus_of(&focused, element, deadline),
             Some(Ok(None)) => FocusWitness::nothing_focused(),
             Some(Err(_)) | None => FocusWitness::default(),

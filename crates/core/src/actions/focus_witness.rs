@@ -16,7 +16,8 @@ pub struct FocusWitness {
 impl FocusWitness {
     /// The application answered that nothing has focus. Unlike `default()`,
     /// which is a focus that was not read, this is a read, so focus that
-    /// arrives later counts as moved.
+    /// arrives later counts as moved. Use it only for that answer: a read the
+    /// application did not answer stays `default()`.
     pub fn nothing_focused() -> Self {
         Self {
             element: Some(String::new()),
