@@ -317,6 +317,10 @@ void agent_desktop_cursor_overlay_drag_begin(double fromX, double fromY, bool tr
             (void)fromX;
             (void)fromY;
             ADDragCancel();
+            ADPointerTargetForget();
+            if (ADCursorWindow != nil) {
+                ADPointerImageSelect(ADCursorWindow, ADPointer, false);
+            }
             ADDragArmed = true;
             ADDragTrail = trail;
             CFTimeInterval now = CACurrentMediaTime();
@@ -477,7 +481,11 @@ bool agent_desktop_cursor_overlay_run(const AgentDesktopCursorFrame *frames,
                 [ADBubbleWindow orderOut:nil];
             }
             if ((config->flags & ADArrowAfterEffect) != 0) {
-                ADPointerTargetRememberIfPointing(config->target);
+                if (config->target[2] > 0.0 && config->target[3] > 0.0) {
+                    ADPointerTargetRememberIfPointing(config->target);
+                } else if (!ADPointerTargetContains(last->x, last->y)) {
+                    ADPointerTargetForget();
+                }
                 if (!ADPointerTargetKnown()) {
                     ADPointerImageRelease(ADCursorWindow, ADPointer, ADPointerReleaseSeconds);
                 }
