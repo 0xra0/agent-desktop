@@ -25,6 +25,8 @@ static const uint8_t ADPointOnArrival = 1 << 4;
 static const uint8_t ADArrowOnDeparture = 1 << 5;
 static const uint8_t ADArrowAfterEffect = 1 << 6;
 static const double ADPointerReleaseSeconds = 0.35;
+/// Whether the latest travel pointed at its landing point; only then may an effect keep the hand on its control.
+static bool ADTravelPointed = false;
 /// How close, in points, the cursor must be to its landing point to count as arrived.
 static const double ADArrivalRadius = 2.0;
 static const CGFloat ADStage = 240.0;
@@ -411,6 +413,9 @@ bool agent_desktop_cursor_overlay_run(const AgentDesktopCursorFrame *frames,
             }
             ADPointerImageApply(ADCursorWindow, ADPointer);
             bool pointsOnArrival = (config->flags & ADPointOnArrival) != 0;
+            if ((config->flags & ADArrowOnDeparture) != 0) {
+                ADTravelPointed = pointsOnArrival;
+            }
             [ADCursorWindow orderFrontRegardless];
 
             bool showsBubble =
@@ -481,11 +486,16 @@ bool agent_desktop_cursor_overlay_run(const AgentDesktopCursorFrame *frames,
                 [ADBubbleWindow orderOut:nil];
             }
             if ((config->flags & ADArrowAfterEffect) != 0) {
-                if (config->target[2] > 0.0 && config->target[3] > 0.0) {
+                bool hasBounds = config->target[2] > 0.0 && config->target[3] > 0.0;
+                if (hasBounds && ADTravelPointed) {
                     ADPointerTargetRememberIfPointing(config->target);
-                } else if (!ADPointerTargetContains(last->x, last->y)) {
+                    if (!ADPointerTargetContains(last->x, last->y)) {
+                        ADPointerTargetForget();
+                    }
+                } else if (hasBounds || !ADPointerTargetContains(last->x, last->y)) {
                     ADPointerTargetForget();
                 }
+                ADTravelPointed = false;
                 if (!ADPointerTargetKnown()) {
                     ADPointerImageRelease(ADCursorWindow, ADPointer, ADPointerReleaseSeconds);
                 }
