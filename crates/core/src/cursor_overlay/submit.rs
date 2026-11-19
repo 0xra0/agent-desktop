@@ -156,7 +156,9 @@ pub(crate) fn submit_drag(
     destination: Point,
     lease: &crate::InteractionLease,
 ) -> bool {
-    let Some(_scope) = travel_scope(lease, arrival_ms(context)) else {
+    // The drag-start frame lands where the cursor already is, so it needs only the arrival floor,
+    // not the travel-sized budget, which a long glide before it may already have spent.
+    let Some(_scope) = travel_scope(lease, crate::CURSOR_ARRIVAL_TIMEOUT_MS) else {
         return false;
     };
     let instruction =
