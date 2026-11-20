@@ -167,3 +167,14 @@ fn a_showing_alert_lists_an_alert_entry_in_place_of_the_sheet_entry() {
     plain.alert = false;
     assert_eq!(surfaces_of(&[plain]).len(), 1);
 }
+
+#[test]
+fn a_modal_alert_lists_both_an_alert_and_a_sheet_entry() {
+    let mut alert = window("w-1", "Quit?", true);
+    alert.alert = true;
+    let kinds: Vec<String> = surfaces_of(&[alert])
+        .into_iter()
+        .map(|surface| surface.kind)
+        .collect();
+    assert_eq!(kinds, ["window", "alert", "sheet"]);
+}
