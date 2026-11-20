@@ -159,12 +159,10 @@ mod imp {
                 policy,
             ));
         }
-        let mut realized = false;
         if container_route_applies(found.is_some(), policy.allow_focus_steal) {
             found = realize_named_item(element, value, deadline)?;
-            realized = found.is_some();
         }
-        if policy.allow_focus_steal && !realized {
+        if found.is_none() && policy.allow_focus_steal {
             let mut seen = found.clone();
             let mut scrolled = false;
             scroll_to_realize(element, deadline, || {

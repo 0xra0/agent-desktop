@@ -376,12 +376,16 @@ runtime_lines() {
         awk -f "$WORK/scan.awk"
 }
 
+# ALLOWED exempts a platform literal, never a comparison of an identity field:
+# a rule 3 line is reported even when an allowed literal shares it.
 hit_lines() {
     {
-        grep -F -f "$WORK/patterns.txt" "$1" 2>/dev/null | sed 's/$/  [rule 1: names an application]/' || true
-        grep -E "$RULE2" "$1" 2>/dev/null | sed 's/$/  [rule 2: application identity]/' || true
+        {
+            grep -F -f "$WORK/patterns.txt" "$1" 2>/dev/null | sed 's/$/  [rule 1: names an application]/' || true
+            grep -E "$RULE2" "$1" 2>/dev/null | sed 's/$/  [rule 2: application identity]/' || true
+        } | grep -vE "$ALLOWED" || true
         grep -E "$RULE3" "$1" 2>/dev/null | sed 's/$/  [rule 3: identity field comparison]/' || true
-    } | grep -vE "$ALLOWED" | LC_ALL=C sort -u || true
+    } | LC_ALL=C sort -u || true
 }
 
 cleanup_fixture_tree() {
