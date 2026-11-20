@@ -40,14 +40,18 @@ pub(crate) fn surface(
         format!("No {kind} surface")
     };
     let mut details = json!({ "predicate": "surface", "surface": kind, "timeout_ms": timeout_ms });
-    let message = match observed {
-        Some(observed) => {
-            details["last_observed"] = json!(observed);
-            format!("{what} was open within {timeout_ms}ms")
-        }
-        None => format!("The surfaces could not be read within {timeout_ms}ms"),
+    let Some(observed) = observed else {
+        let message = format!("The surfaces could not be read within {timeout_ms}ms");
+        return timeout_err(message, with_last_error(details, last_error));
     };
-    timeout_err(message, with_last_error(details, last_error))
+    details["last_observed"] = json!(observed);
+    let message = format!("{what} was open within {timeout_ms}ms");
+    timeout_err(message, with_last_error(details, last_error)).map_err(|error| match error {
+        AppError::Adapter(error) => AppError::Adapter(error.with_suggestion(
+            "The application answered and showed no such surface: details.last_observed lists what was open. Raise --timeout only if the surface opens later.",
+        )),
+        other => other,
+    })
 }
 
 /// Builds the wait-loop TIMEOUT error. Every payload carries
