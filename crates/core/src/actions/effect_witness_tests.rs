@@ -34,10 +34,6 @@ fn a_change_on_or_under_the_target_is_an_observed_effect() {
             WitnessChange::TargetSelected,
         ),
         (
-            |w| w.target.value = Some("1".into()),
-            WitnessChange::TargetValue,
-        ),
-        (
             |w| w.target.surfaces = Some(1),
             WitnessChange::SurfaceOpened,
         ),
@@ -71,6 +67,10 @@ fn a_change_the_application_can_make_by_itself_is_indeterminate() {
             WitnessChange::WindowTitle,
         ),
         (|w| w.window.content = Some(8), WitnessChange::WindowContent),
+        (
+            |w| w.target.value = Some("00:02".into()),
+            WitnessChange::TargetValue,
+        ),
         (|w| w.window.windows = Some(2), WitnessChange::WindowCount),
         (
             |w| w.focus.element = Some("field".into()),
