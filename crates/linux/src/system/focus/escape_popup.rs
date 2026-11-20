@@ -165,7 +165,25 @@ fn still_open(bus: &SharedBus, owner: &AtspiElement, deadline: Deadline) -> Opti
         deadline,
     )
     .ok()?;
-    Some(is_open_owner(&walk))
+    popup_open(&walk)
+}
+
+/// Whether the owner's popup is open, read after a dismissal. `None` when the
+/// owner's states, a child's role or a popup child's states could not be
+/// read, or the walk was cut short: a popup that could not be read never
+/// counts as closed.
+pub(super) fn popup_open(owner: &WalkedNode<ObservedRead>) -> Option<bool> {
+    if owner.children.iter().any(showing_popup) {
+        return Some(true);
+    }
+    let unread = bits(owner).is_none()
+        || owner.truncated
+        || owner.children.iter().any(|child| match role(child) {
+            Some(MENU | POPUP_MENU) => bits(child).is_none(),
+            Some(_) => false,
+            None => true,
+        });
+    (!unread).then_some(false)
 }
 
 /// What the owner's reply settles. A reply of false delivered nothing, so the

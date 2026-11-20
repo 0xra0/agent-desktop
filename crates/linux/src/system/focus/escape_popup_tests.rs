@@ -5,7 +5,7 @@ use serde_json::json;
 
 use super::{
     close_verbs, deepest_open_owner, is_focus_refusal, is_open_owner, is_plain_escape,
-    popup_answer, popup_outcome,
+    popup_answer, popup_open, popup_outcome,
 };
 use crate::actions::action_call::resolve_verb;
 use crate::actions::write::mutation::{Abort, WriteKind, WriteReply, abort_error};
@@ -205,4 +205,29 @@ fn a_closed_popup_answers_the_refused_escape() {
         answer.disposition(),
         DeliverySemantics::delivered_unverified()
     );
+}
+
+#[test]
+fn a_popup_that_could_not_be_read_after_the_dismissal_is_not_closed() {
+    let menu = |states: &[u32]| node(MENU, states, Vec::new());
+    assert_eq!(
+        popup_open(&node(COMBO_BOX, &[], vec![menu(&[SHOWING])])),
+        Some(true)
+    );
+    assert_eq!(
+        popup_open(&node(COMBO_BOX, &[], vec![menu(&[])])),
+        Some(false)
+    );
+
+    let mut owner_unread = node(COMBO_BOX, &[], vec![menu(&[])]);
+    owner_unread.payload.node.traits.states = Field::Failed("gone".to_owned());
+    assert_eq!(popup_open(&owner_unread), None);
+
+    let mut menu_unread = menu(&[]);
+    menu_unread.payload.node.traits.states = Field::Failed("gone".to_owned());
+    assert_eq!(popup_open(&node(COMBO_BOX, &[], vec![menu_unread])), None);
+
+    let mut cut = node(COMBO_BOX, &[], vec![menu(&[])]);
+    cut.truncated = true;
+    assert_eq!(popup_open(&cut), None);
 }
