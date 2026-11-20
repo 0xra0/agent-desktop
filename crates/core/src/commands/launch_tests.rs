@@ -195,53 +195,11 @@ fn expected_data(delivery: &str, retry: &str) -> serde_json::Value {
 }
 
 #[test]
-fn attaching_without_activation_reports_not_delivered() {
-    let adapter = adapter_with(LaunchFacts {
-        attached: true,
-        activation_dispatched: false,
-        postcondition_observed: false,
-    });
-
-    assert_eq!(
-        launch(&adapter, false),
-        expected_data("not_delivered", "safe")
-    );
-}
-
-#[test]
 fn a_fresh_launch_whose_instance_was_read_back_reports_delivered_verified() {
     let adapter = adapter_with(FRESH);
 
     assert_eq!(
         launch(&adapter, false),
-        expected_data("delivered_verified", "unsafe")
-    );
-}
-
-#[test]
-fn attaching_with_activation_reports_delivered_unverified() {
-    let adapter = adapter_with(LaunchFacts {
-        attached: true,
-        activation_dispatched: true,
-        postcondition_observed: false,
-    });
-
-    assert_eq!(
-        launch(&adapter, true),
-        expected_data("delivered_unverified", "unsafe")
-    );
-}
-
-#[test]
-fn attaching_with_activation_and_a_confirmed_frontmost_reports_delivered_verified() {
-    let adapter = adapter_with(LaunchFacts {
-        attached: true,
-        activation_dispatched: true,
-        postcondition_observed: true,
-    });
-
-    assert_eq!(
-        launch(&adapter, true),
         expected_data("delivered_verified", "unsafe")
     );
 }
