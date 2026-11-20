@@ -121,20 +121,34 @@ impl ExecutableIdentity {
         let (Some(argv), Some(actual)) = (self.argv.as_deref(), running.argv.as_deref()) else {
             return false;
         };
+        let requested = argv.get(1..).unwrap_or_default();
         self.executable == running.executable
             && same_invocation(argv, actual)
-            && argv.iter().skip(1).collect::<Vec<_>>() == compared(actual)
+            && requested.iter().collect::<Vec<_>>() == running_mode(actual, requested)
     }
 }
 
 fn compared(argv: &[OsString]) -> Vec<&OsString> {
     argv.iter()
         .skip(1)
-        .filter(|word| {
-            let bytes = word.as_encoded_bytes();
-            !(bytes.len() > 2 && bytes.starts_with(b"--") && !bytes.contains(&b'='))
-        })
+        .filter(|word| !is_bare_long_option(word))
         .collect()
+}
+
+/// The running arguments a launch is compared with: a bare long option the
+/// launch did not ask for is how the process was started, not a mode, so it
+/// is left out; one the launch asked for stays.
+fn running_mode<'a>(actual: &'a [OsString], requested: &[OsString]) -> Vec<&'a OsString> {
+    actual
+        .iter()
+        .skip(1)
+        .filter(|word| !is_bare_long_option(word) || requested.contains(word))
+        .collect()
+}
+
+fn is_bare_long_option(word: &OsString) -> bool {
+    let bytes = word.as_encoded_bytes();
+    bytes.len() > 2 && bytes.starts_with(b"--") && !bytes.contains(&b'=')
 }
 
 fn same_invocation(expected: &[OsString], actual: &[OsString]) -> bool {
