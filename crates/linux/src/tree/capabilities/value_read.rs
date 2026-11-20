@@ -166,11 +166,19 @@ async fn read_cell_text(
     if text.is_empty() {
         return Ok(ValueRead::absent());
     }
+    let at_cap = reaches_text_cap(&text);
     let (kept, cut) = truncate_to_boundary(text, max_bytes);
     Ok(ValueRead {
         value: Field::Present(kept),
-        truncated: cut,
+        truncated: cut || at_cap,
     })
+}
+
+/// Whether a capped `GetText` returned as many characters as it asked for,
+/// so the text may go on past the cap.
+fn reaches_text_cap(text: &str) -> bool {
+    usize::try_from(MAX_TEXT_CHARACTERS)
+        .is_ok_and(|cap| cap > 0 && text.chars().nth(cap - 1).is_some())
 }
 
 async fn read_text(
