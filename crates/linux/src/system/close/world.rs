@@ -20,7 +20,6 @@ use crate::system::{
 };
 
 const LATE_READ_MS: u64 = 300;
-const NESTED_LOOK_MS: u64 = 300;
 
 /// What the close flow touches outside itself. The live implementation reads
 /// `/proc`, talks to the display server and signals through a descriptor; a
@@ -86,7 +85,7 @@ impl World for Live<'_> {
     }
 
     fn nested_dialogs(&self) -> Result<NestedDialogs, AdapterError> {
-        let look = self.deadline.capped(Duration::from_millis(NESTED_LOOK_MS));
+        let look = self.deadline.capped(self.deadline.remaining() / 2);
         surfaces::nested_dialog_titles(self.bus, self.pid, look)
     }
 
