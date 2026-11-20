@@ -96,7 +96,7 @@ mod imp {
                 policy,
             ));
         }
-        if policy.allow_focus_steal {
+        if found.is_none() && policy.allow_focus_steal {
             let mut seen = found.clone();
             let mut scrolled = false;
             scroll_to_realize(element, deadline, || {
