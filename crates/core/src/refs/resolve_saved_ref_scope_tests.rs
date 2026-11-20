@@ -316,7 +316,7 @@ fn a_nested_twin_is_scoped_by_its_inner_parent_and_the_outer_one_is_refused() {
 #[test]
 fn a_refmap_written_before_scope_chains_loads_without_one() {
     let mut entry = crate::adapter::minimal_ref_entry("button", Some("Run"));
-    entry.scope.chain = Vec::new();
+    entry.scope.chain.clear();
     let mut written = serde_json::to_value(&entry).unwrap();
     assert!(written["chain"].is_null(), "an empty chain is not written");
     written.as_object_mut().unwrap().remove("chain");
