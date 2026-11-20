@@ -193,30 +193,24 @@ impl SystemOps for LinuxAdapter {
     }
 
     fn supported_surfaces(&self) -> Vec<SnapshotSurface> {
-        let Ok(deadline) = Deadline::after(SURFACE_PROBE_MS) else {
-            return Vec::new();
-        };
-        if !permissions::accessibility_answers(self.bus(), deadline) {
-            return Vec::new();
+        let mut surfaces = answering_app_surfaces(self.bus());
+        if !surfaces.is_empty() {
+            surfaces.extend(shell::supported(self.bus()));
         }
-        let mut surfaces = app_surfaces();
-        surfaces.extend(shell::supported(self.bus()));
         surfaces
     }
 
-    /// An application surface needs no probe. A kind that is neither an
-    /// application surface nor a shell surface is refused before the shell is
-    /// probed, which takes up to the probe budget on a session whose shell
-    /// tree answers slowly.
+    /// An application surface needs no probe. A kind that no shell surface
+    /// can be is refused without the shell probe, which takes up to its
+    /// budget on a session whose shell tree answers slowly.
     fn check_surface_support(&self, requested: SnapshotSurface) -> Result<(), AdapterError> {
-        let app_surfaces = app_surfaces();
-        if app_surfaces.contains(&requested) {
+        if app_surfaces().contains(&requested) {
             return Ok(());
         }
-        if shell::kinds::kind_of(requested).is_none() {
-            return Err(requested.unavailable_error(&app_surfaces));
-        }
-        let supported = self.supported_surfaces();
+        let supported = match shell::kinds::kind_of(requested) {
+            Some(_) => self.supported_surfaces(),
+            None => answering_app_surfaces(self.bus()),
+        };
         if supported.contains(&requested) {
             return Ok(());
         }
@@ -276,6 +270,15 @@ impl SystemOps for LinuxAdapter {
         lease: &InteractionLease,
     ) -> Result<SurfaceOpening, AdapterError> {
         shell::open_surface(self.bus(), surface, policy, lease)
+    }
+}
+
+/// The application surfaces, or none when the session's accessibility bus
+/// does not answer.
+fn answering_app_surfaces(bus: &crate::system::SharedBus) -> Vec<SnapshotSurface> {
+    match Deadline::after(SURFACE_PROBE_MS) {
+        Ok(deadline) if permissions::accessibility_answers(bus, deadline) => app_surfaces(),
+        _ => Vec::new(),
     }
 }
 
