@@ -199,25 +199,22 @@ impl SystemOps for LinuxAdapter {
         if !permissions::accessibility_answers(self.bus(), deadline) {
             return Vec::new();
         }
-        let mut surfaces = vec![
-            SnapshotSurface::Window,
-            SnapshotSurface::Sheet,
-            SnapshotSurface::Alert,
-        ];
-        surfaces.extend(menu_surface::supported());
+        let mut surfaces = app_surfaces();
         surfaces.extend(shell::supported(self.bus()));
         surfaces
     }
 
+    /// An application surface needs no probe. A kind that is neither an
+    /// application surface nor a shell surface is refused before the shell is
+    /// probed, which takes up to the probe budget on a session whose shell
+    /// tree answers slowly.
     fn check_surface_support(&self, requested: SnapshotSurface) -> Result<(), AdapterError> {
-        if matches!(
-            requested,
-            SnapshotSurface::Window
-                | SnapshotSurface::Sheet
-                | SnapshotSurface::Alert
-                | SnapshotSurface::Menu
-        ) {
+        let app_surfaces = app_surfaces();
+        if app_surfaces.contains(&requested) {
             return Ok(());
+        }
+        if shell::kinds::kind_of(requested).is_none() {
+            return Err(requested.unavailable_error(&app_surfaces));
         }
         let supported = self.supported_surfaces();
         if supported.contains(&requested) {
@@ -280,4 +277,15 @@ impl SystemOps for LinuxAdapter {
     ) -> Result<SurfaceOpening, AdapterError> {
         shell::open_surface(self.bus(), surface, policy, lease)
     }
+}
+
+/// The surfaces of an application window that every session reads.
+fn app_surfaces() -> Vec<SnapshotSurface> {
+    let mut surfaces = vec![
+        SnapshotSurface::Window,
+        SnapshotSurface::Sheet,
+        SnapshotSurface::Alert,
+    ];
+    surfaces.extend(menu_surface::supported());
+    surfaces
 }
