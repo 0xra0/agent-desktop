@@ -3,10 +3,17 @@ use agent_desktop_core::{
 };
 use serde_json::json;
 
-use super::{is_focus_refusal, is_open_owner, is_plain_escape, popup_answer, popup_outcome};
+use super::{
+    close_verbs, deepest_open_owner, is_focus_refusal, is_open_owner, is_plain_escape,
+    popup_answer, popup_outcome,
+};
+use crate::actions::action_call::resolve_verb;
 use crate::actions::write::mutation::{Abort, WriteKind, WriteReply, abort_error};
+use crate::tree::properties::toolkit_trust::ToolkitKind;
 use crate::tree::test_support::helpers::{read_of, words};
-use crate::tree::vocabulary::role_numbers::{COMBO_BOX, MENU, PUSH_BUTTON, TABLE_CELL};
+use crate::tree::vocabulary::role_numbers::{
+    COMBO_BOX, DOCUMENT_WEB, FRAME, MENU, PUSH_BUTTON, PUSH_BUTTON_MENU, TABLE_CELL, TOGGLE_BUTTON,
+};
 use crate::tree::vocabulary::state_bits::{EXPANDED, HAS_POPUP, SHOWING};
 use crate::tree::{Field, ObservedRead, WalkedNode};
 
@@ -25,6 +32,10 @@ fn node(
         source_index: 0,
         in_web_document: false,
     }
+}
+
+fn names(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
 }
 
 fn combo(key: &str, modifiers: Vec<Modifier>) -> KeyCombo {
@@ -58,18 +69,97 @@ fn only_a_focus_refusal_is_answered_by_closing_a_popup() {
 }
 
 #[test]
-fn only_a_combo_box_or_a_popup_button_with_an_open_popup_is_an_open_owner() {
+fn only_a_native_owner_with_a_showing_popup_is_an_open_owner() {
     let shown = || vec![node(MENU, &[SHOWING], Vec::new())];
     let hidden = || vec![node(MENU, &[], Vec::new())];
     assert!(is_open_owner(&node(COMBO_BOX, &[], shown())));
     assert!(!is_open_owner(&node(COMBO_BOX, &[], hidden())));
-    assert!(is_open_owner(&node(
+    assert!(!is_open_owner(&node(COMBO_BOX, &[EXPANDED], Vec::new())));
+    assert!(is_open_owner(&node(PUSH_BUTTON, &[HAS_POPUP], shown())));
+    assert!(!is_open_owner(&node(
         PUSH_BUTTON,
         &[HAS_POPUP, EXPANDED],
         Vec::new()
     )));
     assert!(!is_open_owner(&node(PUSH_BUTTON, &[EXPANDED], Vec::new())));
     assert!(!is_open_owner(&node(TABLE_CELL, &[EXPANDED], shown())));
+}
+
+#[test]
+fn web_document_controls_never_qualify_for_background_escape() {
+    let shown = || vec![node(MENU, &[SHOWING], Vec::new())];
+    let mut web_button = node(PUSH_BUTTON, &[HAS_POPUP, EXPANDED], shown());
+    web_button.in_web_document = true;
+    assert!(!is_open_owner(&web_button));
+
+    let mut web_combo = node(COMBO_BOX, &[EXPANDED], shown());
+    web_combo.in_web_document = true;
+    assert!(!is_open_owner(&web_combo));
+
+    let frame = node(
+        FRAME,
+        &[SHOWING],
+        vec![node(
+            DOCUMENT_WEB,
+            &[SHOWING],
+            vec![node(PUSH_BUTTON, &[HAS_POPUP, EXPANDED], shown())],
+        )],
+    );
+    let mut found = None;
+    deepest_open_owner(&frame, 0, &mut found);
+    assert!(found.is_none());
+}
+
+#[test]
+fn background_escape_never_invokes_a_buttons_primary_action() {
+    let primary = names(&["click", "press", "activate", "open", "clickAncestor"]);
+    for role in [PUSH_BUTTON, PUSH_BUTTON_MENU, TOGGLE_BUTTON] {
+        for toolkit in [
+            ToolkitKind::Gtk3,
+            ToolkitKind::Gtk4,
+            ToolkitKind::Qt,
+            ToolkitKind::Chromium,
+            ToolkitKind::Other,
+        ] {
+            assert_eq!(
+                resolve_verb(&primary, close_verbs(Some(role), toolkit)),
+                None
+            );
+        }
+        assert_eq!(
+            resolve_verb(
+                &names(&["click", "collapse"]),
+                close_verbs(Some(role), ToolkitKind::Gtk3)
+            ),
+            Some(1)
+        );
+    }
+
+    for toolkit in [
+        ToolkitKind::Gtk4,
+        ToolkitKind::Qt,
+        ToolkitKind::Chromium,
+        ToolkitKind::Other,
+    ] {
+        assert_eq!(
+            resolve_verb(&primary, close_verbs(Some(COMBO_BOX), toolkit)),
+            None
+        );
+    }
+    assert_eq!(
+        resolve_verb(
+            &names(&["Press"]),
+            close_verbs(Some(COMBO_BOX), ToolkitKind::Gtk3)
+        ),
+        Some(0)
+    );
+    assert_eq!(
+        resolve_verb(
+            &names(&["click", "activate"]),
+            close_verbs(Some(COMBO_BOX), ToolkitKind::Gtk3)
+        ),
+        None
+    );
 }
 
 #[test]
