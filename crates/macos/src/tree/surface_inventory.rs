@@ -73,8 +73,9 @@ fn list_surfaces_once(
 /// A headless target window is rarely the focused one, and a popover hangs
 /// below the control that raised it, so while the application shows a window
 /// its accessibility window list leaves out, every window gets the bounded
-/// popover search. A window whose search
-/// reached its element limit is left out.
+/// popover search. A window whose search did not read every element names
+/// `popover` unclassified, so a missing popover is not taken for an observed
+/// absence.
 fn push_anchored_popover(
     window: &AXElement,
     window_id: &str,
@@ -83,6 +84,11 @@ fn push_anchored_popover(
 ) -> Result<(), AdapterError> {
     let popover = match super::surfaces::popover_in_window(window, deadline) {
         Ok(popover) => popover,
+        Err(error) if is_incomplete(&error) => {
+            let title = read_title(window, deadline)?;
+            mark_popover_unread(surfaces, window_id, title);
+            None
+        }
         Err(error) if error.code == agent_desktop_core::ErrorCode::ElementNotFound => None,
         Err(error) => return Err(error),
     };
@@ -96,6 +102,26 @@ fn push_anchored_popover(
         });
     }
     Ok(())
+}
+
+fn is_incomplete(error: &AdapterError) -> bool {
+    error
+        .details
+        .as_ref()
+        .is_some_and(|details| details["complete"] == false)
+}
+
+fn mark_popover_unread(surfaces: &mut Vec<SurfaceInfo>, window_id: &str, title: Option<String>) {
+    match surfaces.iter_mut().find(|entry| entry.id == window_id) {
+        Some(entry) => entry.unclassified.push("popover".into()),
+        None => surfaces.push(SurfaceInfo {
+            id: window_id.to_owned(),
+            kind: "window".into(),
+            title,
+            item_count: None,
+            unclassified: vec!["popover".into()],
+        }),
+    }
 }
 
 fn list_surfaces_with(
