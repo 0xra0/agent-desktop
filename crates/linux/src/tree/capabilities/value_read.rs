@@ -143,10 +143,11 @@ async fn read_number(
     })
 }
 
-/// The content of a table cell in one call: `GetText` from the start to the
-/// end of the text. A cell holds a short value, so the length is not asked
-/// for first; the field budget still cuts what is kept. A blank cell holds no
-/// content, so it has no value, in a snapshot and in a read alike.
+/// The content of a table cell in one call: `GetText` from the start to
+/// `MAX_TEXT_CHARACTERS`, which the toolkits clamp to the end of the text
+/// (L42-8), so a long cell never crosses the bus whole and the length is not
+/// asked for first. The field budget still cuts what is kept. A blank cell
+/// holds no content, so it has no value, in a snapshot and in a read alike.
 async fn read_cell_text(
     connection: &Connection,
     element: &AtspiElement,
@@ -157,7 +158,7 @@ async fn read_cell_text(
         element,
         TEXT_INTERFACE,
         "GetText",
-        &(0i32, -1i32),
+        &(0i32, MAX_TEXT_CHARACTERS),
     )
     .await?
     .body()
