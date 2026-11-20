@@ -209,7 +209,9 @@ mod cell_text_on_a_bus {
     #[zbus::interface(name = "org.a11y.atspi.Text")]
     impl Text {
         fn get_text(&self, _start: i32, end: i32) -> String {
-            assert_eq!(end, -1);
+            if end != super::super::MAX_TEXT_CHARACTERS {
+                return format!("unbounded end {end}");
+            }
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.content.to_owned()
         }
