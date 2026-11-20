@@ -45,6 +45,9 @@ may report `unknown` when consent would require a prompt.
   Stop on a headed-only refusal rather than changing mode.
 - A file-name text field is not a file-system rename interface. Value-write
   actions refuse it because a changed field could falsely imply a renamed file.
+- A tab button (`AXRadioButton`, subrole `AXTabButton`) is selected by press
+  rather than writing `AXValue` (which crashes Chromium); if a web tab ignores
+  that press, report it and use `click --headed` only when the user asked.
 - Chromium accessibility is enabled by the adapter when needed. A sparse or
   incomplete read still needs another observation, not an assumption of absence.
 - A table cell carries its grid address in `native_id` (kind `grid_cell`, for
