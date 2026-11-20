@@ -111,7 +111,8 @@ Observation and semantic actions need no helper tool.
   `references/display-servers-and-input.md`.
 - **Opening a popup needs `--headed`.** A headless `click`, `double-click`,
   `triple-click` or `expand` on a menu button or an element with the
-  `haspopup` state returns `POLICY_DENIED` (`details.effect: "focus_steal"`)
+  `haspopup` state returns `POLICY_DENIED` (`details.checks[0].check:
+  "foreground"`, or `"supported_action"` for `double-click` and `triple-click`)
   before anything is sent: the opened popup takes the user's keystrokes. A
   headless `select` on a combo box still works.
 - **After opening a menu-role popup, inspect `data.surfaces`.** A `menu` entry
