@@ -136,7 +136,7 @@ pub(crate) fn confirm_landed(
     let request = ObservationRequest::snapshot(&options, deadline).validate()?;
     let observed =
         crate::tree::renderer_accessibility::observe_tree(adapter, root, &request, lease)
-            .map_err(adapter_error)?;
+            .map_err(AppError::into_adapter_error)?;
     let landed = observed
         .roots
         .first()
@@ -161,7 +161,7 @@ pub(crate) fn recorded_window(
 ) -> Result<WindowInfo, AdapterError> {
     if entry.source.is_process_owned() {
         return crate::system::app_lookup::live_process_owner(adapter, entry, deadline)
-            .map_err(adapter_error);
+            .map_err(AppError::into_adapter_error);
     }
     let resolved = crate::snapshot::resolve_window_for_surface(
         adapter,
@@ -171,10 +171,11 @@ pub(crate) fn recorded_window(
         deadline,
     );
     let mut failure = None;
-    match resolved {
+    match resolved.map_err(AppError::into_adapter_error) {
         Ok(window) if belongs_to_entry(&window, entry) => return Ok(window),
         Ok(_) => {}
-        Err(error) => failure = Some(adapter_error(error)),
+        Err(error) if error.code == crate::ErrorCode::WindowNotFound => {}
+        Err(error) => failure = Some(error),
     }
     if entry.source.source_window_id.is_some() {
         return Err(failure.unwrap_or_else(gone));
@@ -272,7 +273,7 @@ fn observe_window(
     };
     let mut observed =
         crate::tree::renderer_accessibility::observe_tree(adapter, root, request, lease)
-            .map_err(adapter_error)?;
+            .map_err(AppError::into_adapter_error)?;
     if let crate::locator::live_locator::ObservationSource::Window {
         renderer_accessibility_forced,
         ..
@@ -309,13 +310,6 @@ fn unique_live_match(entry: &RefEntry, observed: &ObservedTree) -> Result<usize,
         .copied();
     match_in_scope(observed, scope, &FullPredicate::of_entry(entry))
         .map_err(|miss| miss.into_error(entry))
-}
-
-fn adapter_error(error: AppError) -> AdapterError {
-    match error {
-        AppError::Adapter(error) => error,
-        other => AdapterError::internal(other.to_string()),
-    }
 }
 
 #[cfg(test)]
