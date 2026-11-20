@@ -44,7 +44,7 @@ permission prompts or a visible setup guide.
    take a skeleton and drill the relevant container with `--root`.
    Omit `-i` when you need static labels to distinguish rows.
 2. Act on a qualified ref from that observation. Prefer a semantic ref action
-   over coordinates, and `check` or `uncheck` over a state-reversing `toggle`.
+   over coordinates, and `check` or `uncheck` over `toggle` or `click`: they verify the state.
 3. Verify the requested outcome with an independent read: a fresh snapshot
    or a condition-based `wait`. Wait with `wait`, never a fixed sleep
    or a duration-only wait. A field value alone does not prove an application
