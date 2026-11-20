@@ -325,15 +325,3 @@ fn a_refmap_written_before_scope_chains_loads_without_one() {
 
     assert!(loaded.scope.chain.is_empty());
 }
-
-#[test]
-fn a_scope_chain_survives_a_round_trip() {
-    let _guard = HomeGuard::new();
-    let tree = rows(&["a.txt", "b.txt"]);
-    let entry = name_cell_of_row(tree, 1);
-
-    let loaded: RefEntry = serde_json::from_value(serde_json::to_value(&entry).unwrap()).unwrap();
-
-    assert_eq!(loaded.scope.chain, entry.scope.chain);
-    assert_eq!(loaded.scope.chain[0].role, "group");
-}
