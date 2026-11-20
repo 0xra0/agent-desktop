@@ -71,15 +71,17 @@ pub(crate) fn surface_in_window(
 }
 
 /// The first popover in `window`, nearest the window first, through the
-/// bounded search that finds an open menu. None only when every element that
-/// search reads was read: a search cut at its element limit fails as not found
-/// and says it is incomplete.
+/// bounded search that finds an open menu. None only when the search opened
+/// every element: a search cut at its element limit, or one that left the
+/// items of a content container closed, fails as not found and says it is
+/// incomplete.
 #[cfg(target_os = "macos")]
 fn popover_in_window(
     window: &AXElement,
     deadline: Deadline,
 ) -> Result<Option<AXElement>, AdapterError> {
-    super::app_menu::find_surface_descendant_with(
+    let mut skipped = false;
+    let found = super::app_menu::find_surface_descendant_with(
         window.clone(),
         "window".into(),
         deadline,
@@ -88,6 +90,7 @@ fn popover_in_window(
                 return Ok((true, Vec::new()));
             }
             if !expand {
+                skipped = true;
                 return Ok((false, Vec::new()));
             }
             Ok((
@@ -96,8 +99,12 @@ fn popover_in_window(
             ))
         },
     )
-    .map(|found| found.map(|(_, popover)| popover))
-    .map_err(popover_search_error)
+    .map_err(popover_search_error)?;
+    match found {
+        Some((_, popover)) => Ok(Some(popover)),
+        None if skipped => Err(popover_search_cut()),
+        None => Ok(None),
+    }
 }
 
 fn popover_search_error(error: AdapterError) -> AdapterError {
@@ -108,6 +115,13 @@ fn popover_search_error(error: AdapterError) -> AdapterError {
     if !cut {
         return error;
     }
+    popover_search_cut()
+}
+
+/// A popover search that did not read every element: the items of a content
+/// container are left closed to bound the search, and a popover anchored in
+/// one may be there.
+fn popover_search_cut() -> AdapterError {
     AdapterError::new(
         ErrorCode::ElementNotFound,
         "No popover among the elements the search may read; the rest was not searched",

@@ -113,15 +113,17 @@ fn launch_owns(launched: ProcessId, launch: Option<ProcessIdentity>, pid: u32) -
 /// Waits for the launched process to take the foreground and, when it does,
 /// focuses the window that had it. The wait ends when the foreground is
 /// someone else's, when the launched window has been open for the grace period
-/// without taking it, or after `FOCUS_WAIT`. True only when the previous
-/// window reads back as the foreground afterwards.
+/// without taking it, or after `FOCUS_WAIT` or the launch's own `watch`
+/// deadline, whichever is first. An expired `watch` gives one look. True only
+/// when the previous window reads back as the foreground afterwards.
 pub(super) fn give_back(
     prior: Foreground,
     launched: ProcessId,
     lease: &InteractionLease,
+    watch: Deadline,
     window_is_open: impl Fn() -> bool,
 ) -> bool {
-    let wait = lease.deadline().capped(FOCUS_WAIT);
+    let wait = watch.capped(FOCUS_WAIT);
     let launch = ProcessIdentity::capture(launched).ok().flatten();
     let mut opened: Option<Instant> = None;
     loop {
