@@ -55,13 +55,8 @@ pub(crate) fn launch_app_impl(
     }
     let prior = (!options.activate).then(read_foreground).flatten();
     let (pid, token) = create_process(&executable, options, deadline)?;
-    let watch = if should_poll_after_first_observation(options.timeout_ms) {
-        deadline
-    } else {
-        deadline.capped(Duration::ZERO)
-    };
     let focus_returned = prior.is_some_and(|prior| {
-        give_back(prior, pid, &lease, watch, || {
+        give_back(prior, pid, &lease, || {
             matches!(observe_window_once(pid, &token, deadline), Ok(Some(_)))
         })
     });
