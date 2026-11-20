@@ -12,10 +12,18 @@ pub(crate) fn list_surfaces_for_process(
 ) -> Result<Vec<SurfaceInfo>, AdapterError> {
     let app = element_for_pid(identity.pid());
     super::app_menu::observe(identity, deadline, || {
-        let popovers = crate::system::window::popup_window::shows_popup_window(identity.pid());
-        list_surfaces_once(identity.pid(), deadline, popovers, || {
-            Ok(read_array(&app, "AXWindows", deadline)?.unwrap_or_default())
-        })
+        let windows = read_array(&app, "AXWindows", deadline)?.unwrap_or_default();
+        let listed = windows
+            .iter()
+            .filter_map(|window| {
+                crate::system::window::window_resolve::ax_window_id_with_deadline(window, deadline)
+                    .ok()
+                    .flatten()
+            })
+            .collect();
+        let popovers =
+            crate::system::window::popup_window::shows_unlisted_window(identity.pid(), &listed);
+        list_surfaces_once(identity.pid(), deadline, popovers, || Ok(windows))
     })
 }
 
@@ -63,8 +71,9 @@ fn list_surfaces_once(
 }
 
 /// A headless target window is rarely the focused one, and a popover hangs
-/// below the control that raised it, so while the application shows a pop-up
-/// window every window gets the bounded popover search. A window whose search
+/// below the control that raised it, so while the application shows a window
+/// its accessibility window list leaves out, every window gets the bounded
+/// popover search. A window whose search
 /// reached its element limit is left out.
 fn push_anchored_popover(
     window: &AXElement,
