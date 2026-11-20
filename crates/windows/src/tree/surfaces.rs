@@ -48,14 +48,13 @@ pub(crate) fn surface_root(
             root_from_hwnd(handle, deadline)
         }
         (ObservationRoot::Window(window), SnapshotSurface::Sheet) => {
-            let handle = focused_hwnd_of(&window.id)?;
-            let element = root_from_hwnd(handle, deadline)?;
+            let element = root_from_hwnd(parse_window_id(&window.id)?, deadline)?;
             if window_is_modal_sheet(&element) {
                 Ok(element)
             } else {
                 Err(AdapterError::new(
                     ErrorCode::WindowNotFound,
-                    "The focused window is not a modal sheet",
+                    "The window is not a modal sheet",
                 ))
             }
         }
