@@ -1,11 +1,14 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-use agent_desktop_core::{Deadline, DeliverySemantics, ErrorCode};
+use agent_desktop_core::{
+    Deadline, DeliverySemantics, ErrorCode, ProcessId, ProcessIdentity, WindowInfo,
+};
 
 use super::{
     MAX_POPUP_CHILDREN, MAX_POPUP_DEPTH, MAX_POPUP_NODES, MAX_POPUP_ROOTS, PopupScan, PopupTree,
-    opens_a_popup, scan_popup_owners, scan_timeout_error,
+    opens_a_popup, scan_popup_owners, scan_timeout_error, verify_process_handle,
+    verify_process_target, verify_window_target,
 };
 
 struct FakeNode {
@@ -184,4 +187,78 @@ fn popup_scan_returns_the_deepest_open_owner_within_budget() {
         scan_popup_owners(&tree, vec![root_ref(0)], deadline),
         PopupScan::Found((2, Some((1, 0))))
     );
+}
+
+fn sample_window(id: &str, pid: ProcessId, instance: Option<&str>) -> WindowInfo {
+    WindowInfo {
+        id: id.to_owned(),
+        title: "Dialog".to_owned(),
+        app: "fixture".to_owned(),
+        pid,
+        process_instance: instance.map(str::to_owned),
+        bounds: None,
+        state: Default::default(),
+    }
+}
+
+#[test]
+fn window_target_verification_fails_closed_for_missing_or_changed_identity() {
+    let missing_token = sample_window("w-1", ProcessId::new(1), None);
+    let error = verify_window_target(&missing_token).expect_err("tokenless window must fail");
+    assert_eq!(error.code, ErrorCode::StaleRef);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+
+    let malformed = sample_window(
+        "not-an-hwnd",
+        ProcessId::new(1),
+        Some("windows-proc-v1:1:1"),
+    );
+    let error = verify_window_target(&malformed).expect_err("malformed id must fail");
+    assert_eq!(error.code, ErrorCode::InvalidArgs);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+
+    let process_owner = sample_window("", ProcessId::new(1), Some("windows-proc-v1:1:1"));
+    let error = verify_window_target(&process_owner).expect_err("process-owner entry must fail");
+    assert_eq!(error.code, ErrorCode::WindowNotFound);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+
+    let stale = sample_window(
+        "w-1",
+        ProcessId::new(9_999_999),
+        Some("windows-proc-v1:0:0"),
+    );
+    let error = verify_window_target(&stale).expect_err("unowned handle must fail closed");
+    assert_eq!(error.code, ErrorCode::WindowNotFound);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+}
+
+#[test]
+fn process_target_verification_fails_closed_for_stale_generation_or_unowned_handle() {
+    let stale_process = ProcessIdentity {
+        pid: ProcessId::new(9_999_999),
+        instance: "windows-proc-v1:0:0".to_owned(),
+    };
+    let error = verify_process_target(&stale_process).expect_err("stale process must fail");
+    assert_eq!(error.code, ErrorCode::AppUnresponsive);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+
+    let error = verify_process_handle(&stale_process, std::ptr::null_mut())
+        .expect_err("stale process handle must fail");
+    assert_eq!(error.code, ErrorCode::AppUnresponsive);
+    assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+
+    let current_pid = ProcessId::from(std::process::id());
+    if let Some(token) = crate::system::process_identity::token_for_pid(current_pid)
+        .expect("token lookup for current process")
+    {
+        let live_process = ProcessIdentity {
+            pid: current_pid,
+            instance: token,
+        };
+        verify_process_target(&live_process).expect("live current process must verify");
+        let error = verify_process_handle(&live_process, std::ptr::null_mut())
+            .expect_err("null handle is not owned by the live process");
+        assert_eq!(error.code, ErrorCode::WindowNotFound);
+        assert_eq!(error.disposition, DeliverySemantics::not_delivered());
+    }
 }
