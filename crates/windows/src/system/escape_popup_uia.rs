@@ -2,11 +2,12 @@
 
 use super::{
     MAX_POPUP_ROOTS, PopupScan, PopupScope, PopupTree, is_plain_escape, opens_a_popup,
-    refused_for_focus, scan_popup_owners, scan_timeout_error,
+    refused_for_focus, scan_popup_owners, scan_timeout_error, verify_process_handle,
+    verify_process_target, verify_window_target,
 };
 use agent_desktop_core::{
-    Action, ActionResult, AdapterError, Deadline, DeliveryOutcome, InteractionPolicy, KeyCombo,
-    ProcessIdentity, WindowInfo,
+    Action, ActionResult, AdapterError, Deadline, DeliveryOutcome, DeliverySemantics, ErrorCode,
+    InteractionPolicy, KeyCombo, ProcessIdentity, WindowInfo,
 };
 use std::time::Duration;
 use uiautomation::core::{UICacheRequest, UITreeWalker};
@@ -14,7 +15,7 @@ use uiautomation::patterns::UIExpandCollapsePattern;
 
 use crate::actions::chain::{offered, poll_until, rung};
 use crate::actions::mutation::{classify_success, classify_write};
-use crate::system::window::window_enum::enumerate_top_level;
+use crate::system::window::window_enum::{WindowHandle, enumerate_top_level};
 use crate::system::window::window_identity::live_window_owner;
 use crate::tree::automation::{automation_client, root_from_hwnd};
 use crate::tree::element::UIAElement;
@@ -30,16 +31,21 @@ const COLLAPSED: i32 = 0;
 const POPUP_SCAN_PROPERTIES: [TreeProperty; 2] =
     [TreeProperty::ControlType, TreeProperty::ExpandCollapseState];
 
+struct PopupNode {
+    handle: WindowHandle,
+    element: UIAElement,
+}
+
 struct UiaPopupTree {
     walker: UITreeWalker,
     cache: UICacheRequest,
 }
 
 impl PopupTree for UiaPopupTree {
-    type Node = UIAElement;
+    type Node = PopupNode;
 
-    fn is_open_popup_owner(&self, node: &UIAElement) -> bool {
-        let (properties, _) = read_cached(node, &POPUP_SCAN_PROPERTIES);
+    fn is_open_popup_owner(&self, node: &PopupNode) -> bool {
+        let (properties, _) = read_cached(&node.element, &POPUP_SCAN_PROPERTIES);
         properties
             .get(TreeProperty::ControlType)
             .number()
@@ -47,33 +53,42 @@ impl PopupTree for UiaPopupTree {
             && properties.get(TreeProperty::ExpandCollapseState).number() == Some(EXPANDED)
     }
 
-    fn first_child(&self, node: &UIAElement) -> Option<UIAElement> {
+    fn first_child(&self, node: &PopupNode) -> Option<PopupNode> {
         self.walker
-            .get_first_child_build_cache(&node.0, &self.cache)
+            .get_first_child_build_cache(&node.element.0, &self.cache)
             .ok()
-            .map(UIAElement::from)
+            .map(|element| PopupNode {
+                handle: node.handle,
+                element: UIAElement::from(element),
+            })
     }
 
-    fn next_sibling(&self, node: &UIAElement) -> Option<UIAElement> {
+    fn next_sibling(&self, node: &PopupNode) -> Option<PopupNode> {
         self.walker
-            .get_next_sibling_build_cache(&node.0, &self.cache)
+            .get_next_sibling_build_cache(&node.element.0, &self.cache)
             .ok()
-            .map(UIAElement::from)
+            .map(|element| PopupNode {
+                handle: node.handle,
+                element: UIAElement::from(element),
+            })
     }
 }
 
 fn prefetch_roots(
-    roots: Vec<UIAElement>,
+    roots: Vec<PopupNode>,
     cache: &UICacheRequest,
     deadline: Deadline,
-) -> Result<Vec<UIAElement>, AdapterError> {
+) -> Result<Vec<PopupNode>, AdapterError> {
     let mut cached = Vec::with_capacity(roots.len());
     for root in roots.into_iter().take(MAX_POPUP_ROOTS) {
         if deadline.is_expired() {
             return Err(scan_timeout_error(deadline));
         }
-        if let Ok(element) = root.0.build_updated_cache(cache) {
-            cached.push(UIAElement::from(element));
+        if let Ok(element) = root.element.0.build_updated_cache(cache) {
+            cached.push(PopupNode {
+                handle: root.handle,
+                element: UIAElement::from(element),
+            });
         }
     }
     Ok(cached)
@@ -82,9 +97,9 @@ fn prefetch_roots(
 /// The deepest expanded popup owner among the elements below `roots`, found by
 /// a bounded, deadline-checked incremental walk over the control view.
 fn deepest_popup_owner(
-    roots: Vec<UIAElement>,
+    roots: Vec<PopupNode>,
     deadline: Deadline,
-) -> Result<Option<UIAElement>, AdapterError> {
+) -> Result<Option<PopupNode>, AdapterError> {
     if deadline.is_expired() {
         return Err(scan_timeout_error(deadline));
     }
@@ -106,26 +121,40 @@ fn deepest_popup_owner(
     }
 }
 
-fn window_roots(window: &WindowInfo, deadline: Deadline) -> Result<Vec<UIAElement>, AdapterError> {
+fn verify_popup_target(scope: PopupScope<'_>, handle: WindowHandle) -> Result<(), AdapterError> {
+    match scope {
+        PopupScope::Window(window) => verify_window_target(window).map(|_| ()),
+        PopupScope::Process(process) => verify_process_handle(process, handle),
+    }
+}
+
+fn window_roots(window: &WindowInfo, deadline: Deadline) -> Result<Vec<PopupNode>, AdapterError> {
     if deadline.is_expired() {
         return Err(scan_timeout_error(deadline));
     }
-    Ok(crate::tree::surfaces::surface_root(
-        agent_desktop_core::ObservationRoot::Window(window),
-        agent_desktop_core::SnapshotSurface::Window,
-        deadline,
-    )
-    .into_iter()
-    .collect())
+    let handle = verify_window_target(window)?;
+    let element = match root_from_hwnd(handle as isize, deadline) {
+        Ok(element) => element,
+        Err(error) => {
+            verify_window_target(window)?;
+            if error.code == ErrorCode::Timeout {
+                return Err(error.with_disposition(DeliverySemantics::not_delivered()));
+            }
+            return Ok(Vec::new());
+        }
+    };
+    verify_window_target(window)?;
+    Ok(vec![PopupNode { handle, element }])
 }
 
 fn process_roots(
     process: &ProcessIdentity,
     deadline: Deadline,
-) -> Result<Vec<UIAElement>, AdapterError> {
+) -> Result<Vec<PopupNode>, AdapterError> {
     if deadline.is_expired() {
         return Err(scan_timeout_error(deadline));
     }
+    verify_process_target(process)?;
     let mut handles = Vec::new();
     let _ = enumerate_top_level(|window| {
         if live_window_owner(window.handle) == Some(process.pid) {
@@ -138,25 +167,38 @@ fn process_roots(
         if deadline.is_expired() {
             return Err(scan_timeout_error(deadline));
         }
+        if verify_process_handle(process, handle).is_err() {
+            verify_process_target(process)?;
+            continue;
+        }
         if let Ok(element) = root_from_hwnd(handle as isize, deadline) {
-            roots.push(element);
+            if verify_process_handle(process, handle).is_ok() {
+                roots.push(PopupNode { handle, element });
+            } else {
+                verify_process_target(process)?;
+            }
         }
     }
     Ok(roots)
 }
 
-fn collapse(owner: &UIAElement) -> Result<bool, AdapterError> {
-    match owner.0.get_pattern::<UIExpandCollapsePattern>() {
-        Ok(pattern) => match pattern.collapse() {
-            Ok(()) => classify_success(),
-            Err(error) => classify_write("Collapse", COLLAPSE_LABEL, &error),
-        },
+fn collapse(owner: &PopupNode, scope: PopupScope<'_>) -> Result<bool, AdapterError> {
+    verify_popup_target(scope, owner.handle)?;
+    match owner.element.0.get_pattern::<UIExpandCollapsePattern>() {
+        Ok(pattern) => {
+            verify_popup_target(scope, owner.handle)?;
+            match pattern.collapse() {
+                Ok(()) => classify_success(),
+                Err(error) => classify_write("Collapse", COLLAPSE_LABEL, &error),
+            }
+        }
         Err(error) => classify_write("get_pattern", COLLAPSE_LABEL, &error),
     }
 }
 
 fn close_popup(
-    owner: &UIAElement,
+    owner: &PopupNode,
+    scope: PopupScope<'_>,
     combo: &KeyCombo,
     policy: InteractionPolicy,
     deadline: Deadline,
@@ -164,12 +206,13 @@ fn close_popup(
     if deadline.is_expired() {
         return Err(scan_timeout_error(deadline));
     }
+    verify_popup_target(scope, owner.handle)?;
     let mut run = || {
-        if !collapse(owner)? {
+        if !collapse(owner, scope)? {
             return Ok(DeliveryOutcome::NotDelivered);
         }
         let closed = poll_until(deadline, VERIFY_TIMEOUT, || {
-            read_one(owner, TreeProperty::ExpandCollapseState).number() == Some(COLLAPSED)
+            read_one(&owner.element, TreeProperty::ExpandCollapseState).number() == Some(COLLAPSED)
         });
         Ok(DeliveryOutcome::from_delivery(true, closed))
     };
@@ -206,7 +249,7 @@ pub(crate) fn after_key_route(
         PopupScope::Process(process) => process_roots(process, deadline)?,
     };
     match deepest_popup_owner(roots, deadline)? {
-        Some(owner) => close_popup(&owner, combo, policy, deadline),
+        Some(owner) => close_popup(&owner, scope, combo, policy, deadline),
         None => Err(refusal),
     }
 }

@@ -46,6 +46,80 @@ pub(super) fn scan_timeout_error(deadline: Deadline) -> AdapterError {
         .with_disposition(DeliverySemantics::not_delivered())
 }
 
+/// Verifies that `window` still names a live handle owned by the stored process
+/// generation, failing closed as not delivered when the handle is malformed,
+/// lacks a process-instance token, or no longer matches its owner.
+#[cfg(any(target_os = "windows", test))]
+pub(super) fn verify_window_target(
+    window: &agent_desktop_core::WindowInfo,
+) -> Result<crate::system::window::window_enum::WindowHandle, AdapterError> {
+    if window.is_process_owner() {
+        return Err(AdapterError::app_has_no_window(&window.app)
+            .with_disposition(DeliverySemantics::not_delivered()));
+    }
+    let handle = crate::system::window::window_ops::parse_handle(&window.id);
+    if handle.is_null() {
+        return Err(AdapterError::new(
+            ErrorCode::InvalidArgs,
+            "window id is not a Windows HWND-shaped id",
+        )
+        .with_disposition(DeliverySemantics::not_delivered()));
+    }
+    let Some(evidence) =
+        crate::system::window::window_identity::WindowIdentityEvidence::from_info(handle, window)
+    else {
+        return Err(AdapterError::new(
+            ErrorCode::StaleRef,
+            "popup dismissal requires a process-instance token on the stored window",
+        )
+        .with_disposition(DeliverySemantics::not_delivered()));
+    };
+    evidence
+        .verify_stored()
+        .map_err(|error| error.with_disposition(DeliverySemantics::not_delivered()))?;
+    Ok(handle)
+}
+
+/// Verifies that `process` still names the same running process generation,
+/// failing closed as not delivered when the process exited or its pid recycled.
+#[cfg(any(target_os = "windows", test))]
+pub(super) fn verify_process_target(
+    process: &agent_desktop_core::ProcessIdentity,
+) -> Result<(), AdapterError> {
+    if crate::system::process_identity::matches_instance(process.pid, &process.instance)? {
+        return Ok(());
+    }
+    Err(AdapterError::new(
+        ErrorCode::AppUnresponsive,
+        "Target process instance is no longer running",
+    )
+    .with_details(serde_json::json!({
+        "pid": process.pid,
+        "process_instance": process.instance,
+        "complete": false,
+        "physical_delivery_started": false,
+    }))
+    .with_disposition(DeliverySemantics::not_delivered()))
+}
+
+/// Verifies that `handle` is still owned by `process` in its stored generation.
+#[cfg(any(target_os = "windows", test))]
+pub(super) fn verify_process_handle(
+    process: &agent_desktop_core::ProcessIdentity,
+    handle: crate::system::window::window_enum::WindowHandle,
+) -> Result<(), AdapterError> {
+    verify_process_target(process)?;
+    if crate::system::window::window_identity::live_window_owner(handle) == Some(process.pid) {
+        return Ok(());
+    }
+    Err(AdapterError::new(
+        ErrorCode::WindowNotFound,
+        "The popup window is no longer owned by the target process",
+    )
+    .with_suggestion("Run 'list-windows' to refresh window identifiers, then retry.")
+    .with_disposition(DeliverySemantics::not_delivered()))
+}
+
 /// Finds the deepest open popup owner across at most `MAX_POPUP_ROOTS` roots
 /// and `MAX_POPUP_NODES` nodes, consulting `deadline` before every step.
 #[cfg(any(target_os = "windows", test))]
@@ -139,6 +213,7 @@ pub(crate) fn press_for_window<A: agent_desktop_core::SystemOps>(
 }
 
 /// Where a refused Escape looks for an open popup.
+#[derive(Clone, Copy)]
 pub(crate) enum PopupScope<'a> {
     Window(&'a agent_desktop_core::WindowInfo),
     Process(&'a agent_desktop_core::ProcessIdentity),
