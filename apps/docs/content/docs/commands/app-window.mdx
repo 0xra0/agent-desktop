@@ -225,7 +225,7 @@ agent-desktop list-windows [--app NAME] [--timeout-ms MS]
 
 ## focus-window
 
-Brings a window to the front and succeeds only when the OS reports that window as focused on two consecutive reads. It needs `--headed`, because raising a window takes focus; without it the command returns `POLICY_DENIED` and sends nothing.
+Brings a window to the front and succeeds only when the OS reports that window as focused on two consecutive reads. A window that is already focused gets no request, and the command reports `not_delivered`. It needs `--headed`, because raising a window takes focus; without it the command returns `POLICY_DENIED` and sends nothing.
 
 ```bash
 agent-desktop --headed focus-window [--window-id ID] [--app NAME] [--title TEXT]
