@@ -1,11 +1,11 @@
 use agent_desktop_core::{
-    ActionResult, AdapterError, AdapterSession, AppInfo, Deadline, DismissAllNotificationsRequest,
-    DismissNotificationRequest, DisplayInfo, ImageBuffer, InteractionLease, InteractionPolicy,
-    KeyCombo, NotificationActionRequest, NotificationFilter, NotificationInfo, ObservationOps,
-    OperationReport, PermissionReport, ProcessIdentity, ScreenshotTarget, SessionAffinity,
-    SignalBaseline, SignalFilter, SnapshotSurface, SurfaceOpening, SystemOps, WindowFilter,
-    WindowInfo, WindowOp, system::launch_options::LaunchOptions,
-    system::process_state::ProcessState,
+    ActionResult, AdapterError, AdapterSession, AppInfo, Deadline, DeliverySemantics,
+    DismissAllNotificationsRequest, DismissNotificationRequest, DisplayInfo, ImageBuffer,
+    InteractionLease, InteractionPolicy, KeyCombo, NotificationActionRequest, NotificationFilter,
+    NotificationInfo, ObservationOps, OperationReport, PermissionReport, ProcessIdentity,
+    ScreenshotTarget, SessionAffinity, SignalBaseline, SignalFilter, SnapshotSurface,
+    SurfaceOpening, SystemOps, WindowFilter, WindowInfo, WindowOp,
+    system::launch_options::LaunchOptions, system::process_state::ProcessState,
 };
 
 use crate::adapter::WindowsAdapter;
@@ -230,7 +230,11 @@ impl SystemOps for WindowsAdapter {
         crate::system::window::window_resolve::resolve_window_strict(win, deadline)
     }
 
-    fn focus_window(&self, win: &WindowInfo, lease: &InteractionLease) -> Result<(), AdapterError> {
+    fn focus_window(
+        &self,
+        win: &WindowInfo,
+        lease: &InteractionLease,
+    ) -> Result<DeliverySemantics, AdapterError> {
         crate::system::window::window_activate::focus_window(win, lease)
     }
 
