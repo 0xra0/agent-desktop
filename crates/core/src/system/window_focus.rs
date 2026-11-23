@@ -70,7 +70,7 @@ pub(crate) fn wait_for_focused_window_with_poll_interval(
             .into());
         }
         if !poll_interval.is_zero() {
-            std::thread::sleep(poll_interval.min(deadline.remaining()));
+            crate::wait::deadline::sleep(poll_interval.min(deadline.remaining()));
         }
     }
 }
@@ -95,3 +95,7 @@ fn observed_focused_window(
         Err(err) => Err(AppError::Adapter(err)),
     }
 }
+
+#[cfg(test)]
+#[path = "window_focus_tests.rs"]
+mod tests;
