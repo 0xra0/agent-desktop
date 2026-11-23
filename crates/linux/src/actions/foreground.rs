@@ -104,7 +104,7 @@ fn takes_foreground(
     if toolkit == ToolkitKind::Gtk3 {
         return Ok(false);
     }
-    if opens_dialog(action, view.name_read()) || opens_popup_without_selection(view) {
+    if opens_dialog(action, view.resolved_name()) || opens_popup_without_selection(view) {
         return Ok(true);
     }
     Ok(owner()?.is_some_and(|owner| opens_popup_without_selection(&owner)))

@@ -1,7 +1,7 @@
 use agent_desktop_core::{
     AccessibilityNode, ActionOps, AdapterError, ClipboardContent, ClipboardFormat, Deadline,
-    DragParams, ElementState, InputOps, InteractionLease, KeyCombo, LiveElement, MouseEvent,
-    NativeHandle, ObservationOps, ObservationRequest, ObservationRoot, OperationReport,
+    DragParams, ElementState, InputOps, InteractionLease, InteractionPolicy, KeyCombo, LiveElement,
+    MouseEvent, NativeHandle, ObservationOps, ObservationRequest, ObservationRoot, OperationReport,
     ProcessIdentity, Rect, RefEntry, SnapshotSurface, SurfaceInfo, TreeOptions, WindowFilter,
     WindowInfo,
 };
@@ -232,9 +232,11 @@ impl ActionOps for WindowsAdapter {
     fn scroll_into_view(
         &self,
         handle: &NativeHandle,
+        policy: InteractionPolicy,
         lease: &InteractionLease,
     ) -> Result<(), AdapterError> {
-        crate::actions::scroll_into_view::scroll_into_view_impl(handle, lease)
+        crate::actions::scroll_into_view::scroll_into_view_outcome(handle, lease, policy)
+            .map(|_| ())
     }
 }
 impl InputOps for WindowsAdapter {

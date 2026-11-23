@@ -34,12 +34,16 @@ pub trait ActionOps: Send + Sync {
         Err(AdapterError::not_supported("execute_action"))
     }
 
+    /// Scroll the element into view. `policy` decides whether a route that
+    /// takes the foreground is allowed; a headless policy runs only the routes
+    /// that leave it alone.
     fn scroll_into_view(
         &self,
         handle: &NativeHandle,
+        policy: crate::InteractionPolicy,
         lease: &InteractionLease,
     ) -> Result<(), AdapterError> {
-        let _ = (handle, lease);
+        let _ = (handle, policy, lease);
         Err(AdapterError::not_supported("scroll_into_view"))
     }
 
@@ -51,9 +55,10 @@ pub trait ActionOps: Send + Sync {
         &self,
         _entry: &crate::RefEntry,
         handle: &NativeHandle,
+        policy: crate::InteractionPolicy,
         lease: &InteractionLease,
     ) -> Result<Option<NativeHandle>, AdapterError> {
-        self.scroll_into_view(handle, lease)?;
+        self.scroll_into_view(handle, policy, lease)?;
         Ok(None)
     }
 }

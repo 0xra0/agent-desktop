@@ -98,10 +98,12 @@ pub(crate) fn dispatch_resolved_landing(
             ) {
                 return Err(error.into());
             }
-            let recovered = match target
-                .adapter
-                .scroll_ref_into_view(target.entry, &handle, lease)
-            {
+            let recovered = match target.adapter.scroll_ref_into_view(
+                target.entry,
+                &handle,
+                request.policy,
+                lease,
+            ) {
                 Ok(recovered) => recovered,
                 Err(scroll_error) => {
                     trace_scroll_error(&target, &scroll_error);
@@ -126,10 +128,7 @@ pub(crate) fn dispatch_resolved_landing(
                 .map_err(|error| after_scroll(into_adapter_error(error)))?
         }
     };
-    if matches!(
-        preflight.pointer_delivery,
-        actionability::PointerDelivery::Semantic
-    ) {
+    if preflight.pointer_delivery == actionability::PointerDelivery::Semantic {
         request.policy.allow_cursor_move = false;
     }
     request = request

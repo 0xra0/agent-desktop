@@ -14,7 +14,7 @@ use crate::tree::fixture::{LocalFixture, ensure_test_apartment};
 use crate::tree::properties::rect_has_area;
 use agent_desktop_core::{
     ActionOps, AdapterError, DeliveryDisposition, DeliverySemantics, ErrorCode, InteractionLease,
-    Rect,
+    InteractionPolicy, Rect,
 };
 use std::cell::Cell;
 use std::ffi::c_void;
@@ -260,7 +260,7 @@ fn a_visible_element_is_already_in_view_through_the_adapter() {
     let handle = element.into_native_handle();
     let lease = InteractionLease::guarded(deadline(2_000), ()).expect("an interaction lease");
     WindowsAdapter::new()
-        .scroll_into_view(&handle, &lease)
+        .scroll_into_view(&handle, InteractionPolicy::headless(), &lease)
         .expect("a visible element needs no scroll");
 }
 

@@ -44,6 +44,7 @@ impl ActionOps for MacOSAdapter {
     fn scroll_into_view(
         &self,
         handle: &NativeHandle,
+        _policy: agent_desktop_core::InteractionPolicy,
         lease: &InteractionLease,
     ) -> Result<(), AdapterError> {
         crate::actions::scroll_into_view::scroll_into_view_impl(
