@@ -35,14 +35,18 @@ mod imp {
     use crate::actions::mutation::{classify_success, classify_write};
     use crate::actions::scroll::vertical_scroll;
     use crate::actions::select_combo::{COMBO_SELECT_LABEL, native_combo, select_native_combo};
+    use crate::actions::select_locate::{Located, RealizeScan, RealizeScrollStep, locate};
     use crate::actions::select_search::{
-        find_named_selection_item, name_matches, scroll_to_realize, selection_item_available,
+        find_named_selection_item, name_matches, realize_scroll_step, scroll_to_position,
+        selection_item_available,
     };
     use crate::tree::properties::property_ids::TreeProperty;
     use crate::tree::properties::read_one;
     use agent_desktop_core::DeliveryOutcome;
     use agent_desktop_core::DeliverySemantics;
-    use uiautomation::patterns::{UIExpandCollapsePattern, UISelectionItemPattern};
+    use uiautomation::patterns::{
+        UIExpandCollapsePattern, UIScrollPattern, UISelectionItemPattern,
+    };
 
     pub(crate) fn select_steps(
         element: &UIAElement,
@@ -77,57 +81,90 @@ mod imp {
         selected
     }
 
-    /// Finds the item, then, when the policy allows the scroll that realizes
-    /// a virtualized list's rows, scrolls and searches again after every
-    /// step. A second match across the scrolls is `AMBIGUOUS_TARGET`. After a
-    /// scroll the item is the one a new search finds and proves to be the
-    /// element matched before; an element kept from before a scroll is never
-    /// selected, so a row that left the list or changed is not found.
+    /// Finds the item, sweeping the scroll range when the policy allows the
+    /// scroll that realizes a virtualized list's rows. A second match across
+    /// the sweep is `AMBIGUOUS_TARGET`. The row is read from the window that
+    /// realized it: a sweep that scrolled past the row returns the list to the
+    /// window the row was sighted in and reads it again there, so a row that
+    /// left the viewport is still found.
     fn find_item(
         element: &UIAElement,
         value: &str,
         policy: InteractionPolicy,
         deadline: Deadline,
     ) -> Result<UIAElement, AdapterError> {
-        let mut found = find_named_selection_item(element, value, deadline, None)?;
-        if found.is_none() && !policy.allow_focus_steal && vertical_scroll(element).is_some() {
-            return Err(agent_desktop_core::mechanisms_denied(
+        let mut source = ContainerScan::new(element, value, deadline);
+        match locate(&mut source, policy.allow_focus_steal)? {
+            Located::Found(item) => Ok(item),
+            Located::ScrollDenied => Err(agent_desktop_core::mechanisms_denied(
                 &[crate::actions::scroll::SCROLL_LABEL],
                 policy,
-            ));
+            )),
+            Located::Absent => Err(element_not_found(value)),
         }
-        if found.is_none() && policy.allow_focus_steal {
-            let mut seen = found.clone();
-            let mut scrolled = false;
-            scroll_to_realize(element, deadline, || {
-                scrolled = true;
-                if let Some(item) =
-                    find_named_selection_item(element, value, deadline, seen.as_ref())?
-                {
-                    seen.get_or_insert(item);
-                }
-                Ok(())
-            })?;
-            if scrolled {
-                found = match seen {
-                    Some(matched) => {
-                        find_named_selection_item(element, value, deadline, Some(&matched))?
-                    }
-                    None => None,
-                };
+    }
+
+    /// The rows one container has realized, read as a scroll window over them.
+    struct ContainerScan<'a> {
+        element: &'a UIAElement,
+        value: &'a str,
+        deadline: Deadline,
+        scroll: Option<UIScrollPattern>,
+    }
+
+    impl<'a> ContainerScan<'a> {
+        fn new(element: &'a UIAElement, value: &'a str, deadline: Deadline) -> Self {
+            Self {
+                element,
+                value,
+                deadline,
+                scroll: vertical_scroll(element),
             }
         }
-        found.ok_or_else(|| {
-            AdapterError::new(
-                ErrorCode::ElementNotFound,
-                format!(
-                    "No selection item matched the requested value ({} chars)",
-                    value.chars().count()
-                ),
-            )
-            .with_disposition(DeliverySemantics::not_delivered())
-            .with_suggestion(SELECT_SUGGESTION)
-        })
+    }
+
+    impl RealizeScan for ContainerScan<'_> {
+        type Item = UIAElement;
+
+        fn scan(&mut self, prior: Option<&UIAElement>) -> Result<Option<UIAElement>, AdapterError> {
+            find_named_selection_item(self.element, self.value, self.deadline, prior)
+        }
+
+        fn hides_rows_behind_a_scroll(&self) -> bool {
+            self.scroll.is_some()
+        }
+
+        fn position(&self) -> Option<f64> {
+            self.scroll
+                .as_ref()
+                .and_then(|pattern| pattern.get_vertical_scroll_percent().ok())
+        }
+
+        fn scroll_step(&mut self) -> Result<RealizeScrollStep, AdapterError> {
+            match &self.scroll {
+                Some(pattern) => realize_scroll_step(pattern, self.deadline),
+                None => Ok(RealizeScrollStep::Stop),
+            }
+        }
+
+        fn scroll_to(&mut self, position: f64) -> Result<bool, AdapterError> {
+            match &self.scroll {
+                Some(pattern) => scroll_to_position(pattern, position, self.deadline),
+                None => Ok(false),
+            }
+        }
+    }
+
+    fn element_not_found(value: &str) -> AdapterError {
+        AdapterError::new(
+            ErrorCode::ElementNotFound,
+            format!(
+                "No selection item matched the requested value ({} chars)",
+                value.chars().count()
+            ),
+        )
+        .with_disposition(DeliverySemantics::not_delivered())
+        .with_suggestion(SELECT_SUGGESTION)
     }
 
     fn select_item(
