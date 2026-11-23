@@ -90,7 +90,8 @@ agent-desktop clipboard-clear --headed
 ```
 
 Formats and output follow the core `commands-system` reference. Text, images and
-file lists all work on Linux.
+file lists all work on Linux. `clipboard-set` and `clipboard-clear` write the
+user's clipboard and need `--headed`; `clipboard-get` stays headless.
 
 ### X11
 
