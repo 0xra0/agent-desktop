@@ -1,6 +1,6 @@
 use super::*;
 use crate::adapter::{ActionOps, InputOps, ObservationOps, SystemOps};
-use crate::{AdapterError, WindowInfo};
+use crate::{AdapterError, DeliverySemantics, WindowInfo};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -11,6 +11,7 @@ struct FocusAdapter {
     focused_window_supported: bool,
     focus_sent: Mutex<bool>,
     focused_before: bool,
+    focus_delivery: DeliverySemantics,
 }
 
 impl FocusAdapter {
@@ -47,9 +48,9 @@ impl SystemOps for FocusAdapter {
         &self,
         _win: &WindowInfo,
         _lease: &crate::InteractionLease,
-    ) -> Result<(), AdapterError> {
+    ) -> Result<DeliverySemantics, AdapterError> {
         *self.focus_sent.lock().unwrap() = true;
-        Ok(())
+        Ok(self.focus_delivery)
     }
 
     fn focused_window(
@@ -97,6 +98,7 @@ fn reports_focused_window_after_os_confirms_focus() {
         focused_window_supported: true,
         focus_sent: Mutex::new(false),
         focused_before: false,
+        focus_delivery: DeliverySemantics::delivered_unverified(),
     };
 
     let value = execute(
@@ -129,6 +131,7 @@ fn errors_when_focus_does_not_settle_on_requested_window() {
         focused_window_supported: true,
         focus_sent: Mutex::new(false),
         focused_before: false,
+        focus_delivery: DeliverySemantics::delivered_unverified(),
     };
 
     let err = execute(
@@ -143,6 +146,10 @@ fn errors_when_focus_does_not_settle_on_requested_window() {
     .unwrap_err();
 
     assert_eq!(err.code(), "ACTION_FAILED");
+    let crate::AppError::Adapter(error) = err else {
+        panic!("a focus settle failure is an adapter error");
+    };
+    assert_eq!(error.disposition, DeliverySemantics::delivered_unverified());
 }
 
 #[test]
@@ -155,6 +162,7 @@ fn falls_back_to_focused_window_list_when_direct_observation_is_unsupported() {
         focused_window_supported: false,
         focus_sent: Mutex::new(false),
         focused_before: false,
+        focus_delivery: DeliverySemantics::delivered_unverified(),
     };
 
     let value = execute(
@@ -187,6 +195,7 @@ fn focus_confirmation_resets_after_transient_wrong_window() {
         focused_window_supported: true,
         focus_sent: Mutex::new(false),
         focused_before: true,
+        focus_delivery: DeliverySemantics::delivered_unverified(),
     };
 
     let value = crate::system::window_focus::wait_for_focused_window_with_poll_interval(
@@ -215,6 +224,7 @@ fn app_filter_results_are_not_discarded_by_display_name() {
         focused_window_supported: true,
         focus_sent: Mutex::new(false),
         focused_before: false,
+        focus_delivery: DeliverySemantics::delivered_unverified(),
     };
 
     let value = execute(
@@ -241,6 +251,7 @@ fn headless_focus_window_is_refused_before_any_window_is_read() {
         focused_window_supported: true,
         focus_sent: Mutex::new(false),
         focused_before: false,
+        focus_delivery: DeliverySemantics::delivered_unverified(),
     };
     let err = execute(
         FocusWindowArgs {
@@ -270,6 +281,7 @@ fn a_window_that_is_already_focused_is_not_delivered_and_nothing_is_sent() {
         focused_window_supported: true,
         focus_sent: Mutex::new(false),
         focused_before: true,
+        focus_delivery: DeliverySemantics::delivered_unverified(),
     };
 
     let value = execute(
@@ -288,4 +300,35 @@ fn a_window_that_is_already_focused_is_not_delivered_and_nothing_is_sent() {
         serde_json::json!({ "delivery": "not_delivered", "retry": "safe" })
     );
     assert!(!*adapter.focus_sent.lock().unwrap());
+}
+
+#[test]
+fn a_dispatch_that_sent_nothing_is_not_delivered_even_once_the_window_is_focused() {
+    let target = window("w1", false);
+    let adapter = FocusAdapter {
+        windows: vec![target.clone()],
+        focused_windows: Mutex::new(vec![window("w1", true)]),
+        focused_window_calls: Mutex::new(0),
+        focused_window_supported: true,
+        focus_sent: Mutex::new(false),
+        focused_before: false,
+        focus_delivery: DeliverySemantics::not_delivered(),
+    };
+
+    let value = execute(
+        FocusWindowArgs {
+            window_id: Some(target.id),
+            app: None,
+            title: None,
+        },
+        &adapter,
+        crate::InteractionPolicy::headed(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        value["disposition"],
+        serde_json::json!({ "delivery": "not_delivered", "retry": "safe" })
+    );
+    assert_eq!(value["focused"]["id"], "w1");
 }
