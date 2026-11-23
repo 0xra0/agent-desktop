@@ -55,6 +55,9 @@ pub(crate) fn click_rungs<'a>(
     ]
 }
 
+/// A right click on a surface with no native menu: the pointer click carries the
+/// menu search when the interaction policy allows the pointer, and the semantic
+/// rung is what a headless policy has left.
 pub(crate) fn right_click_rungs<'a>(
     element: &'a AXElement,
     ctx: &ChainContext<'a>,
@@ -63,13 +66,16 @@ pub(crate) fn right_click_rungs<'a>(
     let deadline = ctx.deadline;
     vec![
         physical(PHYSICAL_CLICK, POINTER_EFFECTS, move || {
-            let pid = crate::system::app::app_ops::pid_from_element(element, deadline);
-            physical_click(element, &context, MouseButton::Right, 1)?;
-            let menu_seen = match pid {
-                Some(pid) => chain_menu_steps::wait_for_new_menu(pid, deadline),
-                None => false,
+            let click = || {
+                let pid = crate::system::app::app_ops::pid_from_element(element, deadline);
+                physical_click(element, &context, MouseButton::Right, 1)?;
+                let menu_seen = match pid {
+                    Some(pid) => chain_menu_steps::wait_for_new_menu(pid, deadline),
+                    None => false,
+                };
+                Ok(DeliveryOutcome::from_delivery(true, menu_seen))
             };
-            Ok(DeliveryOutcome::from_delivery(true, menu_seen))
+            chain_menu_steps::show_menu_after(click, element, deadline)
         }),
         custom(
             "show_menu",
