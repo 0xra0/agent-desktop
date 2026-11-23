@@ -35,6 +35,18 @@ pub(crate) fn transient_surface_for_pid(
     })
 }
 
+/// The menu or popover inside `window`, read in one bounded pass.
+#[cfg(target_os = "macos")]
+pub(crate) fn transient_surface_in_window(
+    window: &AXElement,
+    deadline: Deadline,
+) -> Result<Option<AXElement>, AdapterError> {
+    Ok(
+        super::app_menu::find_transient_surface(window.clone(), "window".into(), deadline)?
+            .map(|(_, surface)| surface),
+    )
+}
+
 #[cfg(target_os = "macos")]
 fn first_child_with_role_or_subrole(
     pid: i32,

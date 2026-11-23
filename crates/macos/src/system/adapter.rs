@@ -226,6 +226,16 @@ impl SystemOps for MacOSAdapter {
         crate::system::key_dispatch::press_for_app_impl(process, combo, policy, lease.deadline())
     }
 
+    fn close_transient_surface(
+        &self,
+        process: &ProcessIdentity,
+        window: Option<&WindowInfo>,
+        policy: agent_desktop_core::InteractionPolicy,
+        lease: &InteractionLease,
+    ) -> Result<Option<ActionResult>, AdapterError> {
+        crate::system::escape_popup::close_transient_surface(process, window, policy, lease)
+    }
+
     fn wait_for_menu(
         &self,
         process: ProcessIdentity,

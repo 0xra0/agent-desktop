@@ -226,6 +226,14 @@ fn surface_from_app(
 }
 
 #[cfg(target_os = "macos")]
+pub(super) fn find_transient_surface(
+    root: AXElement,
+    source: String,
+    deadline: Deadline,
+) -> Result<Option<(String, AXElement)>, AdapterError> {
+    find_menu_descendant(root, source, Transient::MenuOrPopover, deadline)
+}
+
 fn find_menu_descendant(
     root: AXElement,
     source: String,
