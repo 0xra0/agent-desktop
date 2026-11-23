@@ -41,7 +41,7 @@ fn a_new_window_of_the_launch_that_is_active_took_the_focus() {
 #[test]
 fn a_window_the_user_switched_to_is_never_taken_back() {
     let now = state(3, vec![client(1, 10), client(2, 20), client(3, 30)]);
-    assert_eq!(judge(&prior(), &now, &launched), Look::Appeared);
+    assert_eq!(judge(&prior(), &now, &launched), Look::Elsewhere);
 }
 
 #[test]
@@ -120,5 +120,41 @@ fn a_launch_that_cannot_show_a_window_ends_the_wait_at_once() {
     let returned = give_back_in(&desktop, &prior(), &launched, || false, deadline());
     assert!(!returned);
     assert!(begun.elapsed() < Duration::from_millis(500));
+    assert_eq!(desktop.sends.get(), 0);
+}
+
+struct Switched {
+    polls: std::cell::Cell<usize>,
+    sends: std::cell::Cell<usize>,
+}
+
+impl Desktop for Switched {
+    fn state(&self, _: Deadline) -> X11State {
+        let poll = self.polls.get();
+        self.polls.set(poll + 1);
+        let active = if poll == 0 { 3 } else { 2 };
+        state(active, vec![client(1, 10), client(2, 20), client(3, 30)])
+    }
+
+    fn activate(&self, _: &Prior, _: Deadline) -> bool {
+        self.sends.set(self.sends.get() + 1);
+        true
+    }
+
+    fn active(&self) -> Option<u32> {
+        Some(2)
+    }
+}
+
+#[test]
+fn the_watch_ends_when_the_user_switches_before_the_launch_takes_the_focus() {
+    let mut before = prior();
+    before.known.insert(3);
+    let desktop = Switched {
+        polls: std::cell::Cell::new(0),
+        sends: std::cell::Cell::new(0),
+    };
+    let returned = give_back_in(&desktop, &before, &launched, || true, deadline());
+    assert!(!returned);
     assert_eq!(desktop.sends.get(), 0);
 }
