@@ -163,6 +163,17 @@ pub(crate) fn recorded_window(
         return crate::system::app_lookup::live_process_owner(adapter, entry, deadline)
             .map_err(AppError::into_adapter_error);
     }
+    if let Some(window_id) = entry.source.source_window_id.as_deref()
+        && let Some(process) = entry.process.identity()
+        && let Some(window) = adapter.recorded_surface_window(
+            process,
+            window_id,
+            entry.source.source_surface,
+            deadline,
+        )?
+    {
+        return Ok(window);
+    }
     let resolved = crate::snapshot::resolve_window_for_surface(
         adapter,
         entry.source.source_app.as_deref(),

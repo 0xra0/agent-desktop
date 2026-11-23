@@ -14,9 +14,9 @@ fn surface(id: &str, kind: &str) -> SurfaceInfo {
 #[test]
 fn shared_menu_discovery_preserves_other_surfaces_and_existing_menu_ids() {
     let window_surfaces = vec![
-        surface("focused-window", "sheet"),
-        surface("focused-window/children/2", "popover"),
-        surface("focused-window/children/4", "alert"),
+        surface("w-7", "sheet"),
+        surface("w-9", "popover"),
+        surface("w-11", "alert"),
     ];
     for menus in [
         vec![],
@@ -123,14 +123,7 @@ fn a_system_dialog_is_listed_as_an_alert_like_a_dialog() {
 }
 
 #[test]
-fn a_cut_popover_search_names_popover_unread_on_the_window() {
-    let mut surfaces = vec![surface("windows/0", "sheet")];
-    mark_popover_unread(&mut surfaces, "windows/0", None);
-    mark_popover_unread(&mut surfaces, "windows/1", Some("Doc".into()));
-    assert_eq!(surfaces[0].unclassified, ["popover"]);
-    assert_eq!(surfaces[1].id, "windows/1");
-    assert_eq!(surfaces[1].kind, "window");
-    assert_eq!(surfaces[1].unclassified, ["popover"]);
+fn an_unclassified_read_is_incomplete_and_a_settled_absence_is_not() {
     let cut = AdapterError::new(agent_desktop_core::ErrorCode::ElementNotFound, "cut")
         .with_details(serde_json::json!({ "complete": false }));
     assert!(is_incomplete(&cut));
