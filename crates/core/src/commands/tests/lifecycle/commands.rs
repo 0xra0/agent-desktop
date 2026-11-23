@@ -129,10 +129,10 @@ impl SystemOps for Stub {
         &self,
         _window: &WindowInfo,
         _lease: &InteractionLease,
-    ) -> Result<(), AdapterError> {
+    ) -> Result<crate::DeliverySemantics, AdapterError> {
         self.focus_sent
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        Ok(())
+        Ok(crate::DeliverySemantics::delivered_unverified())
     }
 
     fn focused_window(
