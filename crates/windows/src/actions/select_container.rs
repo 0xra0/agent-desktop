@@ -25,7 +25,7 @@ const REALIZE_LABEL: &str = "VirtualizedItemPattern.Realize";
 
 /// Whether the item had to be built before it could be used.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Realization {
+pub(crate) enum Realization {
     /// The lookup returned a built item; nothing was sent to the application.
     AlreadyBuilt,
     /// `Realize` was sent, so every later failure is a delivered request with an unverified outcome.
@@ -138,18 +138,18 @@ mod imp {
 
     const READY_TIMEOUT: Duration = Duration::from_millis(800);
 
-    /// The realized item named exactly `value` in `container`, or `None` when
-    /// the container offers no `ItemContainerPattern`, does not know the name,
-    /// or cannot realize it. A second item with the same name — or a
-    /// uniqueness lookup that fails — is `AMBIGUOUS_TARGET`, as in the tree
-    /// walk; only a lookup that answers "no item" proves the name unique. A
-    /// `Realize` that fails after dispatch is `delivered_unverified`, never
-    /// an absent item.
+    /// The realized item named exactly `value` in `container` and whether a
+    /// `Realize` was sent to build it, or `None` when the container offers no
+    /// `ItemContainerPattern`, does not know the name, or cannot realize it. A
+    /// second item with the same name — or a uniqueness lookup that fails — is
+    /// `AMBIGUOUS_TARGET`, as in the tree walk; only a lookup that answers "no
+    /// item" proves the name unique. A `Realize` that fails after dispatch is
+    /// `delivered_unverified`, never an absent item.
     pub(crate) fn realize_named_item(
         container: &UIAElement,
         value: &str,
         deadline: Deadline,
-    ) -> Result<Option<UIAElement>, AdapterError> {
+    ) -> Result<Option<(UIAElement, Realization)>, AdapterError> {
         deadline.ensure_remaining()?;
         let raw: &IUIAutomationElement = container.0.as_ref();
         let Ok(pattern) = (unsafe {
@@ -203,7 +203,7 @@ mod imp {
             read_one(&item, TreeProperty::IsOffscreen).flag() == Some(false)
         })?;
         if selection_item_available(&item) {
-            return Ok(Some(item));
+            return Ok(Some((item, realization)));
         }
         lookup_answer(Ok(None), realization)
     }
@@ -232,13 +232,13 @@ mod imp {
 
 #[cfg(not(target_os = "windows"))]
 mod imp {
-    use super::{AdapterError, Deadline, UIAElement};
+    use super::{AdapterError, Deadline, Realization, UIAElement};
 
     pub(crate) fn realize_named_item(
         _container: &UIAElement,
         _value: &str,
         _deadline: Deadline,
-    ) -> Result<Option<UIAElement>, AdapterError> {
+    ) -> Result<Option<(UIAElement, Realization)>, AdapterError> {
         Ok(None)
     }
 }
