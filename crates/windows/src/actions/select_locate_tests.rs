@@ -84,9 +84,9 @@ impl ItemSource for Fake {
         Ok(true)
     }
 
-    fn realize(&mut self) -> Result<Option<Self::Item>, AdapterError> {
+    fn realize(&mut self) -> Result<Option<(Self::Item, Realization)>, AdapterError> {
         self.log.push("realize".to_string());
-        Ok(self.lookup)
+        Ok(self.lookup.map(|item| (item, Realization::Sent)))
     }
 }
 
