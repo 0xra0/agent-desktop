@@ -43,7 +43,8 @@ may report `unknown` when consent would require a prompt.
   An app without an ordinary window may still expose process-owned surfaces.
   Inspect `supported_surfaces` rather than assuming every surface exists.
 - `agent-desktop press escape --app <app>` closes an open menu or popover with its
-  cancel action when no focused element takes Escape, and reads that it closed. A
+  cancel action when no focused element takes Escape, and reads that it closed;
+  with `--window-id <id>` it closes the surface that window or the app shows. A
   popover can appear a moment after the click that opens it: read it with
   `snapshot --app <app> --surface popover`.
 - `list-surfaces` lists the sheets, dialogs and popovers of every window, not only

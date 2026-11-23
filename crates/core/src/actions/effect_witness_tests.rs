@@ -114,8 +114,47 @@ fn focus_that_arrives_in_the_target_from_no_focus_is_a_change() {
     now.focus.element = Some("target".into());
     now.focus.inside_target = Some(true);
 
-    assert!(
-        now.changes_since(&before)
-            .contains(&WitnessChange::FocusIntoTarget)
-    );
+    let changes = now.changes_since(&before);
+    assert_eq!(changes, [WitnessChange::FocusIntoTarget]);
+    assert_eq!(verdict(&changes), ObservedEffect::Observed);
+}
+
+#[test]
+fn focus_that_arrives_in_the_target_from_outside_is_a_change() {
+    let before = read();
+    let mut now = read();
+    now.focus.element = Some("target".into());
+    now.focus.inside_target = Some(true);
+
+    let changes = now.changes_since(&before);
+    assert_eq!(changes, [WitnessChange::FocusIntoTarget]);
+    assert_eq!(verdict(&changes), ObservedEffect::Observed);
+}
+
+#[test]
+fn focus_that_moves_between_children_inside_the_target_is_not_an_arrival() {
+    let mut before = read();
+    before.focus.element = Some("row-one".into());
+    before.focus.inside_target = Some(true);
+    let mut now = before.clone();
+    now.focus.element = Some("row-two".into());
+
+    let changes = now.changes_since(&before);
+    assert!(!changes.contains(&WitnessChange::FocusIntoTarget));
+    assert_eq!(changes, [WitnessChange::FocusMovedInWindow]);
+    assert_eq!(verdict(&changes), ObservedEffect::Indeterminate);
+}
+
+#[test]
+fn focus_that_was_not_read_before_is_never_an_arrival() {
+    let mut before = read();
+    before.focus = FocusWitness::default();
+    let mut now = read();
+    now.focus.element = Some("target".into());
+    now.focus.inside_target = Some(true);
+
+    let changes = now.changes_since(&before);
+    assert!(!changes.contains(&WitnessChange::FocusIntoTarget));
+    assert!(changes.is_empty());
+    assert_eq!(verdict(&changes), ObservedEffect::NotObserved);
 }
