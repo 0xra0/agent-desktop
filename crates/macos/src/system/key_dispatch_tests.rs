@@ -49,6 +49,7 @@ fn return_and_escape_map_to_default_and_cancel_actions() {
         simple_key_action(&key("escape", Vec::new())),
         Some("AXCancel")
     );
+    assert_eq!(simple_key_action(&key("esc", Vec::new())), Some("AXCancel"));
     assert_eq!(
         simple_key_action(&key("return", vec![Modifier::Meta])),
         None

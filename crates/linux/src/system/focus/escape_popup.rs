@@ -48,7 +48,8 @@ const DISMISS_VERBS: [&str; 3] = ["collapse", "cancel", "close"];
 const GTK3_COMBO_DISMISS_VERBS: [&str; 4] = ["collapse", "cancel", "close", "press"];
 
 pub(super) fn is_plain_escape(combo: &KeyCombo) -> bool {
-    combo.modifiers.is_empty() && combo.key.eq_ignore_ascii_case("escape")
+    combo.modifiers.is_empty()
+        && (combo.key.eq_ignore_ascii_case("escape") || combo.key.eq_ignore_ascii_case("esc"))
 }
 
 pub(super) fn is_focus_refusal(error: &AdapterError) -> bool {

@@ -49,7 +49,10 @@ fn combo(key: &str, modifiers: Vec<Modifier>) -> KeyCombo {
 fn only_a_plain_escape_is_an_escape() {
     assert!(is_plain_escape(&combo("escape", Vec::new())));
     assert!(is_plain_escape(&combo("Escape", Vec::new())));
+    assert!(is_plain_escape(&combo("esc", Vec::new())));
+    assert!(is_plain_escape(&combo("ESC", Vec::new())));
     assert!(!is_plain_escape(&combo("escape", vec![Modifier::Ctrl])));
+    assert!(!is_plain_escape(&combo("esc", vec![Modifier::Shift])));
     assert!(!is_plain_escape(&combo("return", Vec::new())));
 }
 

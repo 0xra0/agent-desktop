@@ -9,6 +9,11 @@ use crate::tree::AXElement;
 #[path = "key_dispatch_menu.rs"]
 mod menu;
 
+#[path = "key_dispatch_window.rs"]
+mod window;
+
+pub(crate) use window::press_for_window;
+
 pub(crate) fn press_for_app_impl(
     process: ProcessIdentity,
     combo: &KeyCombo,
@@ -71,19 +76,25 @@ fn semantic_step(label: &'static str) -> ActionStep {
         .with_verified(false)
 }
 
+/// The delivered result a completed step settles: verified only when the step
+/// read its own effect.
+fn delivery_result(step: ActionStep) -> ActionResult {
+    let verified = step.verified == Some(true);
+    let result = ActionResult::delivered_unverified("press_key").with_steps(vec![step]);
+    if verified {
+        result.with_verified_delivery()
+    } else {
+        result
+    }
+}
+
 fn post_delivery_process_result(
     process: &ProcessIdentity,
     step: ActionStep,
 ) -> Result<ActionResult, AdapterError> {
     crate::system::process::process_identity::require_core(process)
         .map_err(|error| error.with_disposition(DeliverySemantics::delivered_unverified()))?;
-    let verified = step.verified == Some(true);
-    let result = ActionResult::delivered_unverified("press_key").with_steps(vec![step]);
-    Ok(if verified {
-        result.with_verified_delivery()
-    } else {
-        result
-    })
+    Ok(delivery_result(step))
 }
 
 /// Where a key without modifiers lands as an accessibility action.
