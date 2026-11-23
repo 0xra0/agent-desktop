@@ -8,7 +8,6 @@ use crate::{
     wait::deadline::POLL_INTERVAL,
 };
 use serde_json::{Value, json};
-use std::time::Instant;
 
 pub(crate) struct ElementWaitInput {
     pub(crate) ref_id: String,
@@ -26,8 +25,7 @@ pub(crate) fn wait_for_element(
         predicate,
         timeout_ms,
     } = input;
-    let start = Instant::now();
-    let deadline = crate::Deadline::at(start, timeout_ms)?;
+    let deadline = crate::Deadline::after(timeout_ms)?;
     let entry = load_ref_entry(&ref_id, context)?;
 
     let mut last_observed = json!(null);
@@ -65,7 +63,7 @@ pub(crate) fn wait_for_element(
                             expected_bounds_hash = Some(observed);
                         }
                         if wait_predicate::satisfied(&predicate, &last_observed) {
-                            let elapsed = start.elapsed().as_millis();
+                            let elapsed = deadline.elapsed().as_millis();
                             return Ok(json!({
                                 "found": true,
                                 "ref": ref_id,

@@ -32,6 +32,7 @@ pub(crate) struct Prior {
 enum Look {
     Stolen,
     Appeared,
+    Elsewhere,
     Nothing,
 }
 
@@ -68,9 +69,17 @@ fn judge(prior: &Prior, state: &X11State, belongs: &impl Fn(u32) -> bool) -> Loo
             .iter()
             .any(|c| c.id == id && !prior.known.contains(&id) && c.pid.is_some_and(belongs))
     };
+    let elsewhere = |id: u32| {
+        id != prior.client
+            && clients
+                .iter()
+                .any(|c| c.id == id && c.pid.is_some_and(|pid| !belongs(pid)))
+    };
     let prior_open = clients.iter().any(|c| c.id == prior.client);
     if prior_open && active.is_some_and(launched) {
         Look::Stolen
+    } else if active.is_some_and(elsewhere) {
+        Look::Elsewhere
     } else if clients.iter().any(|c| launched(c.id)) {
         Look::Appeared
     } else {
@@ -119,7 +128,9 @@ impl Desktop for Live {
 /// Waits for the launched application's window and, when it took the focus,
 /// asks the window manager to return it to the window that had it. True only
 /// when the display server names that window active afterwards. The wait ends
-/// early when `keeps_waiting` says the launch cannot show a window.
+/// early when `keeps_waiting` says the launch cannot show a window, and when
+/// the user moves the focus to a window that is not the launch's, which is
+/// never taken back.
 pub(crate) fn give_back(
     prior: &Prior,
     belongs: impl Fn(u32) -> bool,
@@ -141,6 +152,7 @@ fn give_back_in(
     loop {
         match judge(prior, &desktop.state(wait), belongs) {
             Look::Stolen => return restore(desktop, prior, belongs, deadline),
+            Look::Elsewhere => return false,
             Look::Appeared => {
                 if appeared.get_or_insert_with(Instant::now).elapsed() >= APPEARED_GRACE {
                     return false;
