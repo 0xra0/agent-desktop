@@ -135,6 +135,6 @@ impl World for Live<'_> {
             );
             !open || dialog_seen.get_or_insert_with(Instant::now).elapsed() < DIALOG_SETTLE
         };
-        focus_return::give_back(prior, |owner| owner == pid, keeps_watching, self.deadline)
+        focus_return::give_back_owned(prior, |owner| owner == pid, keeps_watching, self.deadline)
     }
 }
